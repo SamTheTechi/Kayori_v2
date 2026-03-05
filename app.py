@@ -120,10 +120,10 @@ async def _main() -> None:
     enabled_outputs = ["discord"]
 
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
-    discord_output_user_id = os.getenv("DISCORD_TOKEN", "")
+    discord_output_user_id = os.getenv("DISCORD_USER_ID", "")
 
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_output_chat_id = os.getenv("TELEGRAM_OUTPUT_CHAT_ID", "")
+    telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
     discord_runtime = DiscordRuntime(token=discord_token)
     telegram_runtime = TelegramRuntime(token=telegram_token)
@@ -163,7 +163,8 @@ async def _main() -> None:
                         ).strip().lower() in {"1", "true", "yes", "on"}
     audit_path = os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl")
     try:
-        audit_max_lines = int(str(os.getenv("TOOL_AUDIT_MAX_LINES", "5000")).strip() or "5000")
+        audit_max_lines = int(
+            str(os.getenv("TOOL_AUDIT_MAX_LINES", "5000")).strip() or "5000")
     except Exception:
         audit_max_lines = 5000
     audit_logger = JsonlAuditLogger(

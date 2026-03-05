@@ -1,9 +1,12 @@
 langchain
 langchain_groq
 langgraph
-neo4j 
+neo4j
+Pinecone
 langchain-neo4j
 apscheduler
+langchain-google-community[calendar]
+langchain-google-community[gmail]
 discord
 langchain-tavily
 python-telegram-bot
