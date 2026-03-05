@@ -1,0 +1,1 @@
+# State adapters package.

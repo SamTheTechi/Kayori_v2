@@ -1,0 +1,15 @@
+langchain
+langchain_groq
+langgraph
+neo4j 
+langchain-neo4j
+apscheduler
+discord
+langchain-tavily
+python-telegram-bot
+spotipy
+dotenv
+redis
+google-auth-oauthlib
+geopy
+pytz
