@@ -3,15 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from shared_types.models import LocationState, MessageEnvelope, MoodState, OutboundMessage
-from shared_types.types import (
-    CompanionState,
-    Goal,
-    GoalTask,
-    ProactiveDecision,
-    ProactiveKindPlan,
-    ScheduledTask,
-    ToolAuditEvent,
-)
+from shared_types.types import ScheduledTask, ToolAuditEvent
 
 
 @runtime_checkable
@@ -68,60 +60,61 @@ class StateStore(Protocol):
     async def set_pinned_location(self, location: LocationState) -> None:
         ...
 
+#
+# @runtime_checkable
+# class MemoryConsolidator(Protocol):
+#     async def consolidate(self, *, episode_limit: int) -> None:
+#         ...
+#
+#
+# @runtime_checkable
+# class GoalTaskBrain(Protocol):
+#     async def due_tasks(self, *, within_minutes: int) -> list[GoalTask]:
+#         ...
+#
+#     async def mark_notified(self, task_id: str) -> None:
+#         ...
+#
+#     async def list_goals(self, *, status: str, limit: int = 5) -> list[Goal]:
+#         ...
+#
+#     async def next_actions(self, *, limit: int = 5) -> list[GoalTask]:
+#         ...
 
-@runtime_checkable
-class MemoryConsolidator(Protocol):
-    async def consolidate(self, *, episode_limit: int) -> None:
-        ...
-
-
-@runtime_checkable
-class GoalTaskBrain(Protocol):
-    async def due_tasks(self, *, within_minutes: int) -> list[GoalTask]:
-        ...
-
-    async def mark_notified(self, task_id: str) -> None:
-        ...
-
-    async def list_goals(self, *, status: str, limit: int = 5) -> list[Goal]:
-        ...
-
-    async def next_actions(self, *, limit: int = 5) -> list[GoalTask]:
-        ...
-
-
-@runtime_checkable
-class CompanionStateStore(Protocol):
-    async def get_state(self) -> CompanionState:
-        ...
-
-    async def set_state(self, state: CompanionState) -> None:
-        ...
-
-
-@runtime_checkable
-class ProactiveMessagingPolicy(Protocol):
-    def decide(
-        self,
-        *,
-        kind: str,
-        base_prompt: str,
-        state: CompanionState,
-        now_iso: str,
-        critical: bool = False,
-    ) -> ProactiveDecision:
-        ...
-
-
-@runtime_checkable
-class ProactiveKindStrategy(Protocol):
-    def next_kind(
-        self,
-        *,
-        state: CompanionState,
-        now_iso: str,
-    ) -> ProactiveKindPlan | None:
-        ...
+#
+# @runtime_checkable
+# class CompanionStateStore(Protocol):
+#     async def get_state(self) -> CompanionState:
+#         ...
+#
+#     async def set_state(self, state: CompanionState) -> None:
+#         ...
+#
+#
+# @runtime_checkable
+# class ProactiveMessagingPolicy(Protocol):
+#     def decide(
+#         self,
+#         *,
+#         kind: str,
+#         base_prompt: str,
+#         state: CompanionState,
+#         now_iso: str,
+#         critical: bool = False,
+#     ) -> ProactiveDecision:
+#         ...
+#
+#
+# @runtime_checkable
+# class ProactiveKindStrategy(Protocol):
+#     def next_kind(
+#         self,
+#         *,
+#         state: CompanionState,
+#         now_iso: str,
+#     ) -> ProactiveKindPlan | None:
+#         ...
+#
 
 
 @runtime_checkable
@@ -135,10 +128,11 @@ class EpisodicMemoryStore(Protocol):
     async def remember(
         self,
         *,
-        event: str,
+        fact: str,
         source: str,
-        salience: int = 3,
-        emotion: str = "Neutral",
+        category: str = "misc",
+        importance: int = 3,
+        confidence: float = 0.8,
         tags: list[str] | None = None,
         context: str = "",
     ) -> Any:
@@ -153,10 +147,33 @@ class EpisodicMemoryStore(Protocol):
     ) -> list[Any]:
         ...
 
-    async def recent(self, limit: int = 5) -> list[Any]:
+    async def compact(self, *, max_episodes: int | None = None) -> int:
         ...
 
-    async def compact(self, *, max_episodes: int | None = None) -> int:
+
+@runtime_checkable
+class GraphMemoryStore(Protocol):
+    async def remember(
+        self,
+        *,
+        subject: str,
+        predicate: str,
+        obj: str,
+        source: str,
+        confidence: float = 0.8,
+    ) -> Any:
+        ...
+
+    async def recall(
+        self,
+        *,
+        entity: str | None = None,
+        predicate: str | None = None,
+        limit: int = 10,
+    ) -> list[Any]:
+        ...
+
+    async def close(self) -> None:
         ...
 
 
@@ -173,15 +190,16 @@ class SchedulerStore(Protocol):
 
 
 __all__ = [
-    "CompanionStateStore",
-    "GoalTaskBrain",
+    # "CompanionStateStore",
+    # "GoalTaskBrain",
     "InputAdapter",
-    "MemoryConsolidator",
+    # "MemoryConsolidator",
     "MessageBus",
     "OutputAdapter",
     "EpisodicMemoryStore",
-    "ProactiveKindStrategy",
-    "ProactiveMessagingPolicy",
+    "GraphMemoryStore",
+    # "ProactiveKindStrategy",
+    # "ProactiveMessagingPolicy",
     "SchedulerStore",
     "StateStore",
     "ToolAuditLogger",

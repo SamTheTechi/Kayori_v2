@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from adapters.runtime.telegram_runtime import TelegramRuntime
-from shared_types.models import MessageAttachment, OutboundMessage
+from shared_types.models import MessageAttachment, MessageSource, OutboundMessage
 
 
 @dataclass(slots=True)
@@ -58,7 +58,7 @@ class TelegramOutputAdapter:
             "text": text_content,
         }
 
-        if message.source_hint == "telegram" and message.reply_to_message_id:
+        if message.source == MessageSource.TELEGRAM and message.reply_to_message_id:
             try:
                 payload["reply_to_message_id"] = int(message.reply_to_message_id)
             except Exception:
@@ -73,11 +73,10 @@ def _resolve_chat_id(*, message: OutboundMessage, default_chat_id: str | None) -
     if explicit:
         return explicit
 
-    if message.source_hint == "telegram":
-        if message.is_dm and message.target_user_id:
-            return str(message.target_user_id)
-        if message.channel_id:
-            return str(message.channel_id)
+    if message.target_user_id:
+        return str(message.target_user_id)
+    if message.channel_id:
+        return str(message.channel_id)
 
     if default_chat_id:
         return str(default_chat_id)

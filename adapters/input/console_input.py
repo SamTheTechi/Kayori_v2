@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from shared_types.models import MessageEnvelope
+from shared_types.models import MessageEnvelope, MessageSource
 from shared_types.protocal import MessageBus
 
 
@@ -42,12 +42,10 @@ class ConsoleInputGateway:
                 break
 
             envelope = MessageEnvelope(
-                source="console",
+                source=MessageSource.CONSOLE,
                 content=text,
-                is_dm=True,
                 channel_id=self.channel_id,
                 author_id=self.author_id,
-                target_user_id=self.channel_id,
                 metadata={"transport": "stdin"},
             )
             await self.bus.publish(envelope)

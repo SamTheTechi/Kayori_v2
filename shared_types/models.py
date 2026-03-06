@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +21,14 @@ FAST_EMOTIONS = ("Affection", "Amused", "Frustrated", "Concerned", "Curious")
 MOOD_MIN = 0.0
 MOOD_MAX = 1.0
 MOOD_NEUTRAL = 0.5
+
+
+class MessageSource(str, Enum):
+    DISCORD = "discord"
+    TELEGRAM = "telegram"
+    CONSOLE = "console"
+    REMINDER = "reminder"
+    INTERNAL = "internal"
 
 
 @dataclass(slots=True)
@@ -130,9 +139,8 @@ class MessageAttachment:
 
 @dataclass(slots=True)
 class MessageEnvelope:
-    source: str
+    source: MessageSource
     content: str
-    is_dm: bool = True
     channel_id: str | None = None
     author_id: str | None = None
     target_user_id: str | None = None
@@ -140,8 +148,7 @@ class MessageEnvelope:
     attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def thread_id(self, fallback_user_id: str | None = None) -> str:
         if self.channel_id:
@@ -156,9 +163,8 @@ class MessageEnvelope:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "source": self.source,
+            "source": self.source.value,
             "content": self.content,
-            "is_dm": self.is_dm,
             "channel_id": self.channel_id,
             "author_id": self.author_id,
             "target_user_id": self.target_user_id,
@@ -172,9 +178,8 @@ class MessageEnvelope:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MessageEnvelope":
         return cls(
-            source=str(data.get("source", "unknown")),
+            source=_message_source_from_any(data.get("source")),
             content=str(data.get("content", "")).strip(),
-            is_dm=bool(data.get("is_dm", True)),
             channel_id=_maybe_str(data.get("channel_id")),
             author_id=_maybe_str(data.get("author_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
@@ -182,28 +187,67 @@ class MessageEnvelope:
             attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
-            created_at=str(data.get("created_at")
-                           or datetime.now(timezone.utc).isoformat()),
+            created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
         )
 
 
 @dataclass(slots=True)
 class OutboundMessage:
+    source: MessageSource
     content: str
-    is_dm: bool
     channel_id: str | None = None
     target_user_id: str | None = None
-    source_hint: str = "internal"
+    message_id: str | None = None
+    attachments: list[MessageAttachment] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     reply_to_message_id: str | None = None
     mention_author: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
-    attachments: list[MessageAttachment] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source": self.source.value,
+            "content": self.content,
+            "channel_id": self.channel_id,
+            "target_user_id": self.target_user_id,
+            "message_id": self.message_id,
+            "attachments": [attachment.to_dict() for attachment in self.attachments],
+            "metadata": self.metadata,
+            "created_at": self.created_at,
+            "reply_to_message_id": self.reply_to_message_id,
+            "mention_author": self.mention_author,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "OutboundMessage":
+        return cls(
+            source=_message_source_from_any(data.get("source")),
+            content=str(data.get("content", "")).strip(),
+            channel_id=_maybe_str(data.get("channel_id")),
+            target_user_id=_maybe_str(data.get("target_user_id")),
+            message_id=_maybe_str(data.get("message_id")),
+            attachments=_attachments_from_any(data.get("attachments")),
+            metadata=dict(data.get("metadata") or {}),
+            created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+            reply_to_message_id=_maybe_str(data.get("reply_to_message_id")),
+            mention_author=bool(data.get("mention_author", False)),
+        )
+
+
+def _message_source_from_any(value: Any) -> MessageSource:
+    if isinstance(value, MessageSource):
+        return value
+    try:
+        return MessageSource(str(value or MessageSource.INTERNAL.value).strip().lower())
+    except Exception:
+        return MessageSource.INTERNAL
 
 
 def _maybe_str(value: Any) -> str | None:
     if value is None:
         return None
-    return str(value)
+    text = str(value).strip()
+    return text or None
 
 
 def _maybe_int(value: Any) -> int | None:

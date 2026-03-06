@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from shared_types.models import MessageEnvelope
+from shared_types.models import MessageEnvelope, MessageSource
 from shared_types.protocal import MessageBus, SchedulerStore
 from shared_types.types import ScheduleRequest, ScheduledTask
 
@@ -80,8 +80,7 @@ def _build_task(request: ScheduleRequest, *, fallback_target_user_id: str | None
         "due_ts": due_ts,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "content": content,
-        "source": str(request.get("source") or "scheduler"),
-        "is_dm": bool(request.get("is_dm", True)),
+        "source": request.get("source") or MessageSource.INTERNAL,
         "target_user_id": _maybe_str(
             request.get("target_user_id") or fallback_target_user_id
         ),
@@ -133,9 +132,8 @@ def _task_to_envelope(task: ScheduledTask) -> MessageEnvelope | None:
         metadata["schedule_due_ts"] = float(task["due_ts"])
 
     return MessageEnvelope(
-        source=str(task.get("source") or "scheduler"),
+        source=_message_source(task.get("source")),
         content=content,
-        is_dm=bool(task.get("is_dm", True)),
         target_user_id=_maybe_str(task.get("target_user_id")),
         channel_id=_maybe_str(task.get("channel_id")),
         metadata=metadata,
@@ -147,3 +145,12 @@ def _maybe_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _message_source(value: object) -> MessageSource:
+    if isinstance(value, MessageSource):
+        return value
+    try:
+        return MessageSource(str(value or MessageSource.INTERNAL.value).strip().lower())
+    except Exception:
+        return MessageSource.INTERNAL

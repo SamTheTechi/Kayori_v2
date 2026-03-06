@@ -4,7 +4,7 @@ from typing import Any, Literal
 from typing_extensions import Annotated
 
 from langgraph.prebuilt import InjectedState
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _InjectedStateArgs(BaseModel):
@@ -59,31 +59,33 @@ class UserDeviceToolArgs(_InjectedStateArgs):
 
 class SpotifyToolArgs(_InjectedStateArgs):
     command: Literal[
-        "play_pause",
         "play",
+        "play_track",
         "resume",
         "pause",
         "next",
-        "skip",
         "previous",
-        "track_info",
         "now_playing",
-        "volume",
-        "set_volume",
-        "play_random",
-        "random",
+        "volume_up",
+        "volume_down",
     ] = Field(
-        default="play_random",
+        default="play",
         description="Spotify command.",
-    )
-    volume: int | None = Field(
-        default=None,
-        ge=0,
-        le=100,
-        description="Target volume 0-100. Required for volume/set_volume commands.",
     )
     query: str | None = Field(
         default=None,
         min_length=1,
-        description="Song/artist search text used with command='play'.",
+        description="Song or artist search text used with command='play_track'.",
     )
+    step: int = Field(
+        default=10,
+        ge=1,
+        le=25,
+        description="Volume step used with volume_up and volume_down.",
+    )
+
+    @model_validator(mode="after")
+    def validate_args(self) -> "SpotifyToolArgs":
+        if self.command == "play_track" and not self.query:
+            raise ValueError("query is required when command='play_track'.")
+        return self

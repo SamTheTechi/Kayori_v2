@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import os
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from langchain_groq import ChatGroq
 from langchain_pinecone import PineconeEmbeddings, PineconeVectorStore
-from pydantic import BaseModel, Field
 
-from templates.episodic_strength_template import episodic_strength_template
-
-
-class _StrengthPayload(BaseModel):
-    strength: float = Field(
-        description="memory strength score between 0 and 1")
+COMPACT_BATCH_SIZE = 200
+COMPACT_AGE_WEIGHT = 0.7
+COMPACT_WEAKNESS_WEIGHT = 0.3
+RECALL_VECTOR_WEIGHT = 0.7
+RECALL_IMPORTANCE_WEIGHT = 0.2
+RECALL_CONFIDENCE_WEIGHT = 0.1
+FACT_CATEGORIES = {
+    "identity",
+    "preference",
+    "relationship",
+    "profile",
+    "schedule",
+    "goal",
+    "possession",
+    "misc",
+}
 
 
 @dataclass(slots=True, kw_only=True)
@@ -24,31 +31,15 @@ class EpisodicMemoryStore:
     vector_store: PineconeVectorStore
     namespace: str = "kayori-episodic"
     min_score_default: float = 0.35
-    recent_cache_size: int = 200
-    strength_model: str = "llama-3.1-8b-instant"
-    strength_api_key: str | None = None
-    fallback_from_salience: bool = True
-
-    _recent_cache: deque[dict[str, Any]] = field(init=False, repr=False)
-    _fallback_from_salience: bool = field(init=False, repr=False)
-    _llm: ChatGroq | None = field(default=None, init=False, repr=False)
+    max_episodes: int | None = 250
 
     def __post_init__(self) -> None:
-        self.namespace = (self.namespace or "kayori-episodic").strip()
+        self.namespace = (
+            self.namespace or "kayori-episodic").strip() or "kayori-episodic"
         self.min_score_default = self._clamp(
             self._to_float(self.min_score_default, 0.35), 0.0, 1.0)
-        self._recent_cache = deque(maxlen=max(
-            1, self._to_int(self.recent_cache_size, 200)))
-        self._fallback_from_salience = self.fallback_from_salience
-
-        key = (self.strength_api_key or os.getenv("API_KEY") or "").strip()
-        model_name = (self.strength_model or "").strip()
-        if key and model_name:
-            self._llm = ChatGroq(
-                model=model_name,
-                temperature=0.3,
-                api_key=key,
-            )
+        if self.max_episodes is not None:
+            self.max_episodes = max(0, self._to_int(self.max_episodes, 250))
 
     @classmethod
     def from_env(cls) -> "EpisodicMemoryStore":
@@ -79,55 +70,55 @@ class EpisodicMemoryStore:
             host=host or None,
             namespace=namespace,
         )
+        max_episodes_raw = (os.getenv("EPISODIC_MAX_EPISODES") or "").strip()
+        max_episodes = cls._to_int(
+            max_episodes_raw, 250) if max_episodes_raw else 250
 
         return cls(
             vector_store=vector_store,
             namespace=namespace,
             min_score_default=cls._to_float(
                 os.getenv("EPISODIC_RECALL_MIN_SCORE"), 0.35),
-            recent_cache_size=cls._to_int(
-                os.getenv("EPISODIC_RECENT_CACHE"), 200),
-            strength_model=(os.getenv("MEMORY_STRENGTH_MODEL")
-                            or "llama-3.1-8b-instant").strip(),
-            strength_api_key=(os.getenv(
-                "API_KEY") or "").strip() or None,
-            strength_temperature=cls._to_float(
-                os.getenv("MEMORY_STRENGTH_TEMPERATURE"), 0.0),
-            fallback_from_salience=True,
+            max_episodes=max_episodes,
         )
 
-    def remember(
+    async def remember(
         self,
         *,
-        event: str,
+        fact: str,
         source: str,
-        salience: int = 3,
-        emotion: str = "Neutral",
+        category: str = "misc",
+        importance: int = 3,
+        confidence: float = 0.8,
         tags: list[str] | None = None,
         context: str = "",
     ) -> dict[str, Any]:
-        episode = self._build_episode(
-            event=event,
+        record = self._build_fact_record(
+            fact=fact,
             source=source,
-            salience=salience,
-            emotion=emotion,
+            category=category,
+            importance=importance,
+            confidence=confidence,
             tags=tags,
             context=context,
-            strength=0.5,
         )
-        episode["strength"] = self._score_strength(episode)
 
-        self.vector_store.add_texts(
-            texts=[self._embedding_text(episode)],
-            metadatas=[dict(episode)],
-            ids=[str(episode["id"])],
+        await self.vector_store.aadd_texts(
+            texts=[self._embedding_text(record)],
+            metadatas=[dict(record)],
+            ids=[str(record["id"])],
             namespace=self.namespace,
-            async_req=False,
         )
-        self._recent_cache.append(dict(episode))
-        return dict(episode)
 
-    def recall(
+        if self.max_episodes is not None:
+            try:
+                await self.compact(max_episodes=self.max_episodes)
+            except Exception as exc:
+                print(f"[episodic-memory] compact failed: {exc}")
+
+        return dict(record)
+
+    async def recall(
         self,
         query: str,
         limit: int = 3,
@@ -140,144 +131,206 @@ class EpisodicMemoryStore:
 
         top_k = max(1, min(100, self._to_int(limit, 3)))
         threshold = self._clamp(
-            self.min_score_default if min_score is None else float(min_score),
+            self.min_score_default if min_score is None else self._to_float(
+                min_score, self.min_score_default),
             0.0,
             1.0,
         )
 
-        results = self.vector_store.similarity_search_with_score(
+        results = await self.vector_store.asimilarity_search_with_score(
             query=query_text,
             k=max(top_k * 5, 20),
             namespace=self.namespace,
         )
 
         ranked: list[tuple[float, dict[str, Any]]] = []
+        seen_ids: set[str] = set()
         for doc, raw_score in results:
             metadata = dict(getattr(doc, "metadata", {}) or {})
             if not metadata:
                 continue
 
-            episode = self._episode_from_metadata(metadata)
-            if episode is None:
+            record = self._record_from_metadata(metadata)
+            if record is None:
                 continue
 
+            record_id = str(record.get("id") or "")
+            if not record_id or record_id in seen_ids:
+                continue
+            seen_ids.add(record_id)
+
             vector_score = self._normalize_vector_score(raw_score)
-            final_score = vector_score * 0.8 + \
-                self._clamp(self._to_float(episode.get(
-                    "strength"), 0.0), 0.0, 1.0) * 0.2
+            importance_score = self._importance_score(record.get("importance"))
+            confidence = self._clamp(self._to_float(
+                record.get("confidence"), 0.5), 0.0, 1.0)
+            final_score = (
+                (vector_score * RECALL_VECTOR_WEIGHT)
+                + (importance_score * RECALL_IMPORTANCE_WEIGHT)
+                + (confidence * RECALL_CONFIDENCE_WEIGHT)
+            )
             if final_score >= threshold:
-                ranked.append((final_score, episode))
+                ranked.append((final_score, record))
 
         ranked.sort(key=lambda item: item[0], reverse=True)
-        return [dict(episode) for _, episode in ranked[:top_k]]
+        return [dict(record) for _, record in ranked[:top_k]]
 
-    def recent(self, limit: int = 5) -> list[dict[str, Any]]:
-        top_k = max(1, min(100, self._to_int(limit, 5)))
-        if not self._recent_cache:
-            return []
+    async def compact(self, *, max_episodes: int | None = None) -> int:
+        keep = self.max_episodes if max_episodes is None else max_episodes
+        if keep is None:
+            return 0
 
-        snapshot = [dict(item) for item in self._recent_cache]
-        snapshot.sort(key=lambda episode: self._parse_ts(
-            str(episode.get("timestamp", ""))), reverse=True)
-        return snapshot[:top_k]
+        keep = max(0, self._to_int(keep, 0))
+        ids: list[str] = []
+        async with self.vector_store._async_index_context() as index:
+            async for page in index.list(namespace=self.namespace):
+                ids.extend(str(item).strip()
+                           for item in page if str(item).strip())
 
-    def _score_strength(self, episode: dict[str, Any]) -> float:
-        salience = max(1, min(5, self._to_int(episode.get("salience"), 3)))
-        fallback = self._clamp(float(salience) / 5.0, 0.0, 1.0)
+            if len(ids) <= keep:
+                return 0
 
-        if self._llm is None:
-            if self._fallback_from_salience:
-                return fallback
-            raise ValueError("ChatGroq is not configured")
+            records: list[dict[str, Any]] = []
+            for start in range(0, len(ids), COMPACT_BATCH_SIZE):
+                batch = ids[start:start + COMPACT_BATCH_SIZE]
+                fetched = await index.fetch(ids=batch, namespace=self.namespace)
+                vectors = getattr(fetched, "vectors", {}) or {}
+                for vector_id in batch:
+                    vector = vectors.get(vector_id)
+                    if vector is None:
+                        continue
+                    metadata = dict(getattr(vector, "metadata", {}) or {})
+                    metadata.setdefault("id", vector_id)
+                    record = self._record_from_metadata(metadata)
+                    if record is not None:
+                        records.append(record)
 
-        prompt_messages = episodic_strength_template.format_messages(
-            summary=episode.get("summary", ""),
-            context=episode.get("context", ""),
-            source=episode.get("source", ""),
-            emotion=episode.get("emotion", "Neutral"),
-            salience=salience,
-        )
+        if len(records) <= keep:
+            return 0
 
-        try:
-            structured = self._llm.with_structured_output(_StrengthPayload)
-            payload = structured.invoke(prompt_messages)
-            if isinstance(payload, _StrengthPayload):
-                value = payload.strength
-            else:
-                value = float(payload["strength"])
-            return self._clamp(self._to_float(value, fallback), 0.0, 1.0)
-        except Exception:
-            if self._fallback_from_salience:
-                return fallback
-            raise
+        records.sort(key=lambda record: self._parse_ts(
+            str(record.get("timestamp", ""))))
+        total = len(records)
+        scored: list[tuple[float, str]] = []
+        for idx, record in enumerate(records):
+            age_score = 1.0 if total == 1 else 1.0 - (idx / (total - 1))
+            retention = self._retention_strength(
+                importance=record.get("importance"),
+                confidence=record.get("confidence"),
+            )
+            weakness = 1.0 - retention
+            eviction_score = (age_score * COMPACT_AGE_WEIGHT) + \
+                (weakness * COMPACT_WEAKNESS_WEIGHT)
+            record_id = str(record.get("id") or "").strip()
+            if record_id:
+                scored.append((eviction_score, record_id))
 
-    def _build_episode(
+        overflow = max(0, len(scored) - keep)
+        if overflow == 0:
+            return 0
+
+        scored.sort(key=lambda item: item[0], reverse=True)
+        delete_ids = [record_id for _, record_id in scored[:overflow]]
+        if not delete_ids:
+            return 0
+
+        await self.vector_store.adelete(ids=delete_ids, namespace=self.namespace)
+        return len(delete_ids)
+
+    def _build_fact_record(
         self,
         *,
-        event: str,
+        fact: str,
         source: str,
-        salience: int,
-        emotion: str,
+        category: str,
+        importance: int,
+        confidence: float,
         tags: list[str] | None,
         context: str,
-        strength: float,
     ) -> dict[str, Any]:
-        summary = self._clean_text(event, 600)
-        if not summary:
-            raise ValueError("event must be non-empty")
+        normalized_fact = self._clean_text(fact, 600)
+        if not normalized_fact:
+            raise ValueError("fact must be non-empty")
 
+        normalized_category = self._normalize_category(category)
+        normalized_importance = max(1, min(5, self._to_int(importance, 3)))
+        normalized_confidence = self._clamp(
+            self._to_float(confidence, 0.8), 0.0, 1.0)
         return {
-            "id": f"EP-{uuid4().hex[:10]}",
+            "id": f"FM-{uuid4().hex[:10]}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": self._clean_text(source or "unknown", 80) or "unknown",
-            "salience": max(1, min(5, self._to_int(salience, 3))),
-            "emotion": self._clean_text(emotion or "Neutral", 40) or "Neutral",
-            "strength": self._clamp(self._to_float(strength, 0.5), 0.0, 1.0),
+            "category": normalized_category,
+            "importance": normalized_importance,
+            "confidence": normalized_confidence,
             "tags": self._normalize_tags(tags or []),
-            "summary": summary,
+            "fact": normalized_fact,
             "context": self._clean_text(context, 600),
         }
 
-    def _episode_from_metadata(self, metadata: dict[str, Any]) -> dict[str, Any] | None:
-        try:
-            episode_id = self._clean_text(metadata.get("id", ""), 80)
-            if not episode_id:
-                return None
-
-            raw_tags = metadata.get("tags", [])
-            if isinstance(raw_tags, str):
-                tags = [part.strip()
-                        for part in raw_tags.split(",") if part.strip()]
-            elif isinstance(raw_tags, list) or isinstance(raw_tags, tuple) or isinstance(raw_tags, set):
-                tags = [str(part).strip()
-                        for part in raw_tags if str(part).strip()]
-            else:
-                tags = []
-
-            return {
-                "id": episode_id,
-                "timestamp": self._clean_text(metadata.get("timestamp", datetime.now(timezone.utc).isoformat()), 80) or datetime.now(timezone.utc).isoformat(),
-                "source": self._clean_text(metadata.get("source", "unknown"), 80) or "unknown",
-                "salience": max(1, min(5, self._to_int(metadata.get("salience", 3), 3))),
-                "emotion": self._clean_text(metadata.get("emotion", "Neutral"), 40) or "Neutral",
-                "strength": self._clamp(self._to_float(metadata.get("strength", 0.5), 0.5), 0.0, 1.0),
-                "tags": self._normalize_tags(tags),
-                "summary": self._clean_text(metadata.get("summary", ""), 600),
-                "context": self._clean_text(metadata.get("context", ""), 600),
-            }
-        except Exception:
+    def _record_from_metadata(self, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        record_id = self._clean_text(metadata.get("id", ""), 80)
+        fact = self._clean_text(metadata.get("fact", ""), 600)
+        if not record_id or not fact:
             return None
 
-    def _embedding_text(self, episode: dict[str, Any]) -> str:
+        raw_tags = metadata.get("tags", [])
+        if isinstance(raw_tags, str):
+            tags = [part.strip()
+                    for part in raw_tags.split(",") if part.strip()]
+        elif isinstance(raw_tags, (list, tuple, set)):
+            tags = [str(part).strip()
+                    for part in raw_tags if str(part).strip()]
+        else:
+            tags = []
+
+        return {
+            "id": record_id,
+            "timestamp": self._clean_text(
+                metadata.get("timestamp", datetime.now(
+                    timezone.utc).isoformat()),
+                80,
+            ) or datetime.now(timezone.utc).isoformat(),
+            "source": self._clean_text(metadata.get("source", "unknown"), 80) or "unknown",
+            "category": self._normalize_category(metadata.get("category", "misc")),
+            "importance": max(1, min(5, self._to_int(metadata.get("importance", 3), 3))),
+            "confidence": self._clamp(self._to_float(metadata.get("confidence", 0.5), 0.5), 0.0, 1.0),
+            "tags": self._normalize_tags(tags),
+            "fact": fact,
+            "context": self._clean_text(metadata.get("context", ""), 600),
+        }
+
+    def _embedding_text(self, record: dict[str, Any]) -> str:
         return "\n".join(
             [
-                f"summary: {episode.get('summary', '')}",
-                f"context: {episode.get('context', '')}",
-                f"tags: {', '.join(episode.get('tags') or [])}",
-                f"emotion: {episode.get('emotion', 'Neutral')}",
-                f"source: {episode.get('source', 'unknown')}",
+                f"fact: {record.get('fact', '')}",
+                f"context: {record.get('context', '')}",
+                f"category: {record.get('category', 'misc')}",
+                f"tags: {', '.join(record.get('tags') or [])}",
+                f"source: {record.get('source', 'unknown')}",
             ]
         )
+
+    @staticmethod
+    def _importance_score(value: Any) -> float:
+        importance = max(1, min(5, EpisodicMemoryStore._to_int(value, 3)))
+        return EpisodicMemoryStore._clamp(float(importance) / 5.0, 0.0, 1.0)
+
+    @staticmethod
+    def _retention_strength(*, importance: Any, confidence: Any) -> float:
+        importance_score = EpisodicMemoryStore._importance_score(importance)
+        confidence_score = EpisodicMemoryStore._clamp(
+            EpisodicMemoryStore._to_float(confidence, 0.5),
+            0.0,
+            1.0,
+        )
+        return (importance_score * 0.7) + (confidence_score * 0.3)
+
+    @staticmethod
+    def _normalize_category(value: Any) -> str:
+        text = EpisodicMemoryStore._normalize_spaces(value).lower()
+        if text in FACT_CATEGORIES:
+            return text
+        return "misc"
 
     @staticmethod
     def _normalize_vector_score(score: float) -> float:
@@ -327,7 +380,7 @@ class EpisodicMemoryStore:
 
     @staticmethod
     def _normalize_tags(tags: list[str] | tuple[str, ...] | set[str]) -> list[str]:
-        normalized = set()
+        normalized: set[str] = set()
         for tag in tags:
             text = EpisodicMemoryStore._normalize_spaces(tag)
             if text:

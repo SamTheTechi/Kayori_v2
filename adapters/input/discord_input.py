@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import discord
 
 from adapters.runtime.discord_runtime import DiscordMessageHandler, DiscordRuntime
-from shared_types.models import MessageAttachment, MessageEnvelope
+from shared_types.models import MessageAttachment, MessageEnvelope, MessageSource
 from shared_types.protocal import MessageBus
 
 
@@ -16,8 +16,10 @@ class DiscordInputAdapter:
     bus: MessageBus
     name: str = "discord-input"
 
-    _stop_event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-    _handler: DiscordMessageHandler | None = field(default=None, init=False, repr=False)
+    _stop_event: asyncio.Event = field(
+        default_factory=asyncio.Event, init=False, repr=False)
+    _handler: DiscordMessageHandler | None = field(
+        default=None, init=False, repr=False)
     _acquired: bool = field(default=False, init=False, repr=False)
 
     async def start(self) -> None:
@@ -52,12 +54,20 @@ class DiscordInputAdapter:
             return
 
         envelope = MessageEnvelope(
-            source="discord",
+            source=MessageSource.DISCORD,
             content=content,
-            is_dm=isinstance(message.channel, discord.DMChannel),
-            message_id=str(message.id),
-            channel_id=str(message.channel.id),
             author_id=str(message.author.id),
+            target_user_id=(
+                str(message.author.id)
+                if isinstance(message.channel, discord.DMChannel)
+                else None
+            ),
+            channel_id=(
+                None
+                if isinstance(message.channel, discord.DMChannel)
+                else str(message.channel.id)
+            ),
+            message_id=str(message.id),
             attachments=attachments,
             metadata={
                 "author_display_name": message.author.display_name,

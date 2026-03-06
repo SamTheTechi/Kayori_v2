@@ -2,107 +2,125 @@ from __future__ import annotations
 
 import asyncio
 from os import getenv
-import random
 from typing import Any
 
 import spotipy
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyOAuth
 
 from tools.schemas import SpotifyToolArgs
 
 SPOTIFY_TAG = "[spotify_tool]"
+NO_DEVICE_MESSAGE = "No active Spotify device found."
+MISSING_CREDENTIALS_MESSAGE = (
+    "Spotify credentials are missing. Set SPOTIFY_CLIENT_ID, "
+    "SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI."
+)
+SUPPORTED_COMMANDS = (
+    "play",
+    "play_track",
+    "pause",
+    "resume",
+    "next",
+    "previous",
+    "now_playing",
+    "volume_up",
+    "volume_down",
+)
 
 
 class SpotifyTool(BaseTool):
     name: str = "spotify_tool"
     description: str = (
-        "Controls Spotify playback. Use command='play' with query to play a song/artist, "
-        "or command='play' without query to auto-pick from recent/top listening."
+        "Control Spotify playback. Use play to resume, play_track with a query "
+        "to queue and jump to a song, now_playing for the current track, and "
+        "volume_up/volume_down for relative volume changes."
     )
     args_schema: type[BaseModel] = SpotifyToolArgs
 
+    _client: spotipy.Spotify | None = PrivateAttr(default=None)
+
     def __init__(self, *, enabled: bool | None = None) -> None:
+        # Backward-compatible with the current app wiring. Tool enablement should
+        # be controlled by whether this tool is added to the tools list at all.
         del enabled
         super().__init__()
 
     async def _arun(
         self,
-        command: str = "play_random",
-        volume: int | None = None,
+        command: str = "play",
         query: str | None = None,
+        step: int = 10,
         state: dict[str, Any] | None = None,
     ) -> str:
         del state
 
-        normalized = _normalize_command(str(command or "play_random"))
-        if not normalized:
-            print(f"{SPOTIFY_TAG} unsupported_command raw={command!r}")
-            return "Unsupported Spotify command."
-
-        parsed_volume = _parse_int(volume) if volume is not None else None
+        normalized = _normalize_command(command)
         cleaned_query = _clean_query(query)
+        step_value = _normalize_step(step)
+
+        if normalized is None:
+            print(f"{SPOTIFY_TAG} unsupported_command raw={command!r}")
+            return _unsupported_command_message(command)
+
         print(
-            f"{SPOTIFY_TAG} command_start raw={
-                command!r} normalized={normalized} "
-            f"has_query={bool(cleaned_query)} volume={parsed_volume}"
+            f"{SPOTIFY_TAG} command_start command={normalized} "
+            f"has_query={bool(cleaned_query)} step={step_value}"
         )
-        if normalized == "volume" and parsed_volume is None:
-            print(f"{SPOTIFY_TAG} invalid_volume_input raw={volume!r}")
-            return "Volume command requires an integer in range 0-100."
+
+        if normalized == "play_track" and not cleaned_query:
+            return "play_track requires a non-empty query."
 
         try:
-            print(f"{SPOTIFY_TAG} build_client_start")
             client = self._build_client()
-            print(f"{SPOTIFY_TAG} build_client_ok")
         except RuntimeError as exc:
-            print(f"{SPOTIFY_TAG} build_client_runtime_error err={exc}")
+            print(f"{SPOTIFY_TAG} client_error err={exc}")
             return str(exc)
         except Exception as exc:
-            print(f"{SPOTIFY_TAG} build_client_error err={exc}")
-            return f"Failed to initialize Spotify client: {exc}"
+            print(f"{SPOTIFY_TAG} client_error err={exc}")
+            return "Failed to initialize Spotify client."
 
         try:
-            print(f"{SPOTIFY_TAG} execute action={normalized}")
-            if normalized == "play_pause":
-                result = await _play_pause(client)
-            elif normalized == "play":
-                result = await _play(client, query=cleaned_query)
+            if normalized == "play":
+                result = await _resume_playback(client)
+            elif normalized == "play_track":
+                result = await _play_track(client, query=cleaned_query or "")
             elif normalized == "pause":
-                result = await _pause(client)
+                result = await _pause_playback(client)
             elif normalized == "next":
-                result = await _next_track(client)
+                result = await _skip_to_next(client)
             elif normalized == "previous":
-                result = await _previous_track(client)
-            elif normalized == "track_info":
-                result = await _track_info(client)
-            elif normalized == "volume":
-                result = await _set_volume(client, parsed_volume or 0)
-            elif normalized == "play_random":
-                result = await _play_random(client)
+                result = await _skip_to_previous(client)
+            elif normalized == "now_playing":
+                result = await _now_playing(client)
+            elif normalized == "volume_up":
+                result = await _adjust_volume(client, direction=1, step=step_value)
+            elif normalized == "volume_down":
+                result = await _adjust_volume(client, direction=-1, step=step_value)
             else:
-                print(f"{SPOTIFY_TAG} unsupported_normalized normalized={
-                      normalized}")
-                return "Unsupported Spotify command."
-
-            print(f"{SPOTIFY_TAG} execute_ok action={normalized}")
-            return result
+                return _unsupported_command_message(normalized)
         except SpotifyException as exc:
             print(
-                f"{SPOTIFY_TAG} spotify_exception action={normalized} "
+                f"{SPOTIFY_TAG} spotify_exception command={normalized} "
                 f"status={getattr(exc, 'http_status', None)} err={exc}"
             )
             return _format_spotify_error(exc)
         except Exception as exc:
-            print(f"{SPOTIFY_TAG} execute_error action={normalized} err={exc}")
-            return f"Spotify request failed: {exc}"
+            print(f"{SPOTIFY_TAG} execute_error command={normalized} err={exc}")
+            return "Spotify request failed."
+
+        print(f"{SPOTIFY_TAG} command_ok command={normalized}")
+        return result
 
     def _run(self, *args: Any, **kwargs: Any) -> str:
         raise NotImplementedError("Use async execution for spotify_tool.")
 
     def _build_client(self) -> spotipy.Spotify:
+        if self._client is not None:
+            return self._client
+
         client_id = str(getenv("SPOTIFY_CLIENT_ID", "")).strip()
         client_secret = str(getenv("SPOTIFY_CLIENT_SECRET", "")).strip()
         redirect_uri = str(
@@ -112,70 +130,54 @@ class SpotifyTool(BaseTool):
             getenv("SPOTIFY_CACHE_PATH", ".spotify_token_cache.json")
         ).strip()
 
-        # Spotify is deprecating localhost redirects; normalize to loopback IP.
         if redirect_uri.startswith("http://localhost:"):
             redirect_uri = redirect_uri.replace(
                 "http://localhost:", "http://127.0.0.1:", 1
             )
-            print(f"{SPOTIFY_TAG} normalized_redirect_uri redirect_uri={
-                  redirect_uri}")
 
         if not client_id or not client_secret or not redirect_uri:
-            print(
-                f"{SPOTIFY_TAG} missing_credentials "
-                f"client_id={bool(client_id)} client_secret={
-                    bool(client_secret)} "
-                f"redirect_uri={bool(redirect_uri)}"
-            )
-            raise RuntimeError(
-                "Spotify credentials are missing. Set SPOTIFY_CLIENT_ID, "
-                "SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI."
-            )
+            raise RuntimeError(MISSING_CREDENTIALS_MESSAGE)
 
-        scope = (
-            "user-modify-playback-state user-read-playback-state "
-            "user-read-currently-playing user-top-read user-library-read "
-            "user-read-recently-played"
-        )
         oauth = SpotifyOAuth(
             client_id=client_id,
             client_secret=client_secret,
             redirect_uri=redirect_uri,
-            scope=scope,
+            scope=(
+                "user-modify-playback-state user-read-playback-state "
+                "user-read-currently-playing user-top-read user-library-read "
+                "user-read-recently-played"
+            ),
             open_browser=True,
             cache_path=cache_path,
         )
-        return spotipy.Spotify(auth_manager=oauth)
+        self._client = spotipy.Spotify(auth_manager=oauth)
+        return self._client
 
 
 def _normalize_command(command: str) -> str | None:
-    value = (command or "").strip().lower()
+    value = str(command or "").strip().lower()
     aliases = {
-        "play&pause": "play_pause",
-        "play_pause": "play_pause",
-        "toggle": "play_pause",
         "play": "play",
         "resume": "play",
+        "play_track": "play_track",
         "pause": "pause",
         "next": "next",
-        "skip": "next",
         "previous": "previous",
-        "prev": "previous",
-        "track_info": "track_info",
-        "now_playing": "track_info",
-        "volume": "volume",
-        "set_volume": "volume",
-        "play_random": "play_random",
-        "random": "play_random",
+        "now_playing": "now_playing",
+        "volume_up": "volume_up",
+        "volume_down": "volume_down",
     }
     return aliases.get(value)
 
 
-def _parse_int(value: object) -> int | None:
+def _normalize_step(step: int | None) -> int:
+    if step is None:
+        return 10
     try:
-        return int(value)  # type: ignore[arg-type]
+        parsed = int(step)
     except Exception:
-        return None
+        return 10
+    return max(1, min(25, parsed))
 
 
 def _clean_query(value: object) -> str | None:
@@ -185,34 +187,39 @@ def _clean_query(value: object) -> str | None:
     return text or None
 
 
+def _unsupported_command_message(command: object) -> str:
+    supported = ", ".join(SUPPORTED_COMMANDS)
+    return f"Unsupported Spotify command '{command}'. Supported commands: {supported}."
+
+
 def _format_spotify_error(exc: SpotifyException) -> str:
     status = getattr(exc, "http_status", None)
     if status == 401:
         return "Spotify authorization failed. Re-authenticate the Spotify app."
     if status == 403:
-        return "Spotify account/device does not allow this action."
+        return "Spotify account or device does not allow this action."
     if status == 404:
-        return "No active Spotify device found."
+        return NO_DEVICE_MESSAGE
     if status == 429:
         return "Spotify rate limit reached. Try again shortly."
     reason = str(getattr(exc, "msg", "") or str(exc)).strip()
     return f"Spotify API error ({status or 'unknown'}): {reason}"
 
 
-def _track_label(track: dict) -> str:
-    name = str(track.get("name") or "Unknown track")
+def _track_label(track: dict[str, Any]) -> str:
+    name = str(track.get("name") or "Unknown track").strip()
     artists = track.get("artists") or []
     artist_names = ", ".join(
         str(item.get("name") or "").strip()
         for item in artists
-        if isinstance(item, dict)
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
     )
     if artist_names:
         return f"{name} by {artist_names}"
     return name
 
 
-def _first_playable_track(items: list[dict]) -> dict | None:
+def _first_playable_track(items: list[Any]) -> dict[str, Any] | None:
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -222,196 +229,250 @@ def _first_playable_track(items: list[dict]) -> dict | None:
     return None
 
 
-async def _play_pause(client: spotipy.Spotify) -> str:
-    playback = await asyncio.to_thread(client.current_playback)
-    is_playing = bool(playback and playback.get("is_playing"))
-    if is_playing:
-        await asyncio.to_thread(client.pause_playback)
-        return "Playback paused."
-    await asyncio.to_thread(client.start_playback)
+def _get_active_device(playback: dict[str, Any] | None) -> dict[str, Any] | None:
+    device = (playback or {}).get("device")
+    return device if isinstance(device, dict) else None
+
+
+def _device_volume(payload: dict[str, Any] | None) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    if isinstance(payload.get("volume_percent"), int):
+        return max(0, min(100, int(payload["volume_percent"])))
+    device = payload.get("device")
+    if isinstance(device, dict) and isinstance(device.get("volume_percent"), int):
+        return max(0, min(100, int(device["volume_percent"])))
+    return None
+
+
+async def _get_current_playback(client: spotipy.Spotify) -> dict[str, Any] | None:
+    payload = await asyncio.to_thread(client.current_playback)
+    return payload if isinstance(payload, dict) else None
+
+
+async def _get_available_device(client: spotipy.Spotify) -> dict[str, Any] | None:
+    payload = await asyncio.to_thread(client.devices)
+    devices = list((payload or {}).get("devices") or [])
+    active_device = next(
+        (
+            device
+            for device in devices
+            if isinstance(device, dict) and bool(device.get("is_active"))
+        ),
+        None,
+    )
+    if isinstance(active_device, dict):
+        return active_device
+
+    for device in devices:
+        if isinstance(device, dict):
+            return device
+    return None
+
+
+async def _resolve_target_device(
+    client: spotipy.Spotify,
+    playback: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    active_device = _get_active_device(playback)
+    if active_device is not None:
+        return active_device
+    return await _get_available_device(client)
+
+
+def _device_id(device: dict[str, Any] | None) -> str | None:
+    if not isinstance(device, dict):
+        return None
+    value = str(device.get("id") or "").strip()
+    return value or None
+
+
+async def _resume_playback(client: spotipy.Spotify) -> str:
+    playback = await _get_current_playback(client)
+    if playback and bool(playback.get("is_playing")):
+        return "Playback is already active."
+
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
+
+    device_id = _device_id(device)
+    kwargs: dict[str, Any] = {}
+    if device_id:
+        kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.start_playback, **kwargs)
     return "Playback resumed."
 
 
-async def _play(client: spotipy.Spotify, *, query: str | None = None) -> str:
-    if query:
-        return await _play_from_query(client, query=query)
-    return await _play_auto_pick(client)
+async def _pause_playback(client: spotipy.Spotify) -> str:
+    playback = await _get_current_playback(client)
+    if playback is not None and not bool(playback.get("is_playing")):
+        return "Playback is already paused."
 
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
 
-async def _pause(client: spotipy.Spotify) -> str:
-    await asyncio.to_thread(client.pause_playback)
+    device_id = _device_id(device)
+    kwargs: dict[str, Any] = {}
+    if device_id:
+        kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.pause_playback, **kwargs)
     return "Playback paused."
 
 
-async def _next_track(client: spotipy.Spotify) -> str:
-    queue = await asyncio.to_thread(client.queue)
-    await asyncio.to_thread(client.next_track)
-    next_item = ((queue or {}).get("queue") or [None])[0]
-    if isinstance(next_item, dict):
-        return f"Skipped to next track: {_track_label(next_item)}."
+async def _skip_to_next(client: spotipy.Spotify) -> str:
+    playback = await _get_current_playback(client)
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
+
+    device_id = _device_id(device)
+    kwargs: dict[str, Any] = {}
+    if device_id:
+        kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.next_track, **kwargs)
     return "Skipped to next track."
 
 
-async def _previous_track(client: spotipy.Spotify) -> str:
-    await asyncio.to_thread(client.previous_track)
+async def _skip_to_previous(client: spotipy.Spotify) -> str:
+    playback = await _get_current_playback(client)
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
+
+    device_id = _device_id(device)
+    kwargs: dict[str, Any] = {}
+    if device_id:
+        kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.previous_track, **kwargs)
     return "Went to previous track."
 
 
-async def _track_info(client: spotipy.Spotify) -> str:
-    playback = await asyncio.to_thread(client.current_playback)
+async def _now_playing(client: spotipy.Spotify) -> str:
+    playback = await _get_current_playback(client)
     if not playback:
         return "No active playback right now."
 
     item = playback.get("item")
     if not isinstance(item, dict):
-        return "No track is currently playing."
-    device_name = str((playback.get("device") or {}).get("name") or "").strip()
-    label = _track_label(item)
+        return "No active playback right now."
+
+    device_name = str((_get_active_device(playback) or {}).get("name") or "").strip()
+    status = "playing" if bool(playback.get("is_playing")) else "paused"
     suffix = f" on {device_name}" if device_name else ""
-    return f"Now playing: {label}{suffix}."
+    return f"Now {status}: {_track_label(item)}{suffix}."
 
 
-async def _set_volume(client: spotipy.Spotify, volume: int) -> str:
-    target = max(0, min(100, int(volume)))
-    await asyncio.to_thread(client.volume, target)
-    return f"Volume set to {target}%."
+async def _adjust_volume(
+    client: spotipy.Spotify,
+    *,
+    direction: int,
+    step: int,
+) -> str:
+    playback = await _get_current_playback(client)
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
+
+    current = _device_volume(playback)
+    if current is None:
+        current = _device_volume(device)
+    if current is None:
+        return NO_DEVICE_MESSAGE
+
+    next_value = max(0, min(100, current + (step * direction)))
+    if next_value == current:
+        if direction > 0:
+            return "Volume is already at maximum."
+        return "Volume is already at minimum."
+
+    device_id = _device_id(device)
+    kwargs: dict[str, Any] = {}
+    if device_id:
+        kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.volume, next_value, **kwargs)
+
+    if direction > 0:
+        return f"Volume increased from {current}% to {next_value}%."
+    return f"Volume decreased from {current}% to {next_value}%."
 
 
-async def _play_from_query(client: spotipy.Spotify, *, query: str) -> str:
-    print(f"{SPOTIFY_TAG} play_from_query search_tracks query={query!r}")
+async def _play_track(client: spotipy.Spotify, *, query: str) -> str:
+    track = await _match_track(client, query=query)
+    if track is None:
+        return f"No Spotify match found for '{query}'."
+
+    playback = await _get_current_playback(client)
+    device = await _resolve_target_device(client, playback)
+    if device is None:
+        return NO_DEVICE_MESSAGE
+
+    uri = str(track.get("uri") or "").strip()
+    if not uri:
+        return f"No Spotify match found for '{query}'."
+
+    device_id = _device_id(device)
+    label = _track_label(track)
+
+    if playback is not None:
+        queue_kwargs: dict[str, Any] = {}
+        next_kwargs: dict[str, Any] = {}
+        start_kwargs: dict[str, Any] = {}
+        if device_id:
+            queue_kwargs["device_id"] = device_id
+            next_kwargs["device_id"] = device_id
+            start_kwargs["device_id"] = device_id
+
+        await asyncio.to_thread(client.add_to_queue, uri, **queue_kwargs)
+        await asyncio.to_thread(client.next_track, **next_kwargs)
+        if not bool(playback.get("is_playing")):
+            await asyncio.to_thread(client.start_playback, **start_kwargs)
+        return f"Queued and playing: {label}."
+
+    start_kwargs = {"uris": [uri]}
+    if device_id:
+        start_kwargs["device_id"] = device_id
+    await asyncio.to_thread(client.start_playback, **start_kwargs)
+    return f"Playing: {label}."
+
+
+async def _match_track(
+    client: spotipy.Spotify,
+    *,
+    query: str,
+) -> dict[str, Any] | None:
+    print(f"{SPOTIFY_TAG} search_tracks query={query!r}")
     track_search = await asyncio.to_thread(
         client.search,
         q=query,
         type="track",
         limit=5,
     )
-    track_items = list(((track_search or {}).get(
-        "tracks") or {}).get("items") or [])
-    selected_track = _first_playable_track(track_items)
-    if selected_track is not None:
-        print(f"{SPOTIFY_TAG} play_from_query hit=track")
-        await asyncio.to_thread(client.start_playback, uris=[selected_track["uri"]])
-        return f"Playing: {_track_label(selected_track)}."
+    track_items = list(((track_search or {}).get("tracks") or {}).get("items") or [])
+    track = _first_playable_track(track_items)
+    if track is not None:
+        return track
 
-    print(f"{SPOTIFY_TAG} play_from_query fallback=artist")
+    print(f"{SPOTIFY_TAG} search_artists query={query!r}")
     artist_search = await asyncio.to_thread(
         client.search,
         q=query,
         type="artist",
         limit=3,
     )
-    artist_items = list(((artist_search or {}).get(
-        "artists") or {}).get("items") or [])
+    artist_items = list(
+        ((artist_search or {}).get("artists") or {}).get("items") or []
+    )
     first_artist = artist_items[0] if artist_items else None
     artist_id = str((first_artist or {}).get("id") or "").strip()
-    if artist_id:
-        top_payload = await asyncio.to_thread(client.artist_top_tracks, artist_id, country="US")
-        top_tracks = list((top_payload or {}).get("tracks") or [])
-        selected_artist_track = _first_playable_track(top_tracks)
-        if selected_artist_track is not None:
-            print(f"{SPOTIFY_TAG} play_from_query hit=artist_top_track")
-            await asyncio.to_thread(client.start_playback, uris=[selected_artist_track["uri"]])
-            artist_name = str((first_artist or {}).get("name") or "").strip()
-            if artist_name:
-                return f"Playing top track from {artist_name}: {_track_label(selected_artist_track)}."
-            return f"Playing: {_track_label(selected_artist_track)}."
+    if not artist_id:
+        return None
 
-    print(f"{SPOTIFY_TAG} play_from_query fallback=auto_pick")
-    fallback = await _play_auto_pick(client)
-    if fallback.startswith("No Spotify tracks found"):
-        return f"No Spotify match found for '{query}'."
-    return f"No direct match for '{query}'. {fallback}"
-
-
-async def _play_auto_pick(client: spotipy.Spotify) -> str:
-    print(f"{SPOTIFY_TAG} auto_pick source=recent")
-    recent_payload = await asyncio.to_thread(client.current_user_recently_played, limit=20)
-    recent_items = list((recent_payload or {}).get("items") or [])
-    recent_tracks = [
-        item.get("track")
-        for item in recent_items
-        if isinstance(item, dict) and isinstance(item.get("track"), dict)
-    ]
-    recent_track = _first_playable_track(recent_tracks)
-
-    if recent_track is not None:
-        seed_id = str(recent_track.get("id") or "").strip()
-        if seed_id:
-            recommendations = await asyncio.to_thread(
-                client.recommendations,
-                seed_tracks=[seed_id],
-                limit=20,
-            )
-            recommended_tracks = list(
-                (recommendations or {}).get("tracks") or [])
-            recommended_track = _first_playable_track(recommended_tracks)
-            if recommended_track is not None:
-                print(f"{SPOTIFY_TAG} auto_pick hit=recommendations")
-                await asyncio.to_thread(client.start_playback, uris=[recommended_track["uri"]])
-                return f"Playing something like your recent vibe: {_track_label(recommended_track)}."
-
-        print(f"{SPOTIFY_TAG} auto_pick hit=recent_track")
-        await asyncio.to_thread(client.start_playback, uris=[recent_track["uri"]])
-        return f"Playing from your recent vibe: {_track_label(recent_track)}."
-
-    print(f"{SPOTIFY_TAG} auto_pick source=top_tracks")
     top_payload = await asyncio.to_thread(
-        client.current_user_top_tracks,
-        20,
-        0,
-        "short_term",
+        client.artist_top_tracks,
+        artist_id,
+        country="US",
     )
-    top_tracks = list((top_payload or {}).get("items") or [])
-    top_track = _first_playable_track(top_tracks)
-    if top_track is not None:
-        print(f"{SPOTIFY_TAG} auto_pick hit=top_track")
-        await asyncio.to_thread(client.start_playback, uris=[top_track["uri"]])
-        return f"Playing from your top tracks: {_track_label(top_track)}."
-
-    print(f"{SPOTIFY_TAG} auto_pick source=saved_tracks")
-    saved_payload = await asyncio.to_thread(client.current_user_saved_tracks, 20, 0)
-    saved_tracks = [
-        item.get("track")
-        for item in (saved_payload or {}).get("items", [])
-        if isinstance(item, dict) and isinstance(item.get("track"), dict)
-    ]
-    saved_track = _first_playable_track(saved_tracks)
-    if saved_track is not None:
-        print(f"{SPOTIFY_TAG} auto_pick hit=saved_track")
-        await asyncio.to_thread(client.start_playback, uris=[saved_track["uri"]])
-        return f"Playing from your saved tracks: {_track_label(saved_track)}."
-
-    print(f"{SPOTIFY_TAG} auto_pick no_tracks_found")
-    return "No Spotify tracks found in recent, top, or saved library."
-
-
-async def _play_random(client: spotipy.Spotify) -> str:
-    print(f"{SPOTIFY_TAG} play_random source=top_tracks")
-    top_tracks = await asyncio.to_thread(
-        client.current_user_top_tracks,
-        50,
-        0,
-        "short_term",
-    )
-    items = list((top_tracks or {}).get("items") or [])
-
-    if not items:
-        print(f"{SPOTIFY_TAG} play_random fallback=saved_tracks")
-        saved = await asyncio.to_thread(client.current_user_saved_tracks, 50, 0)
-        items = [entry.get("track") for entry in (saved or {}).get(
-            "items", []) if isinstance(entry, dict)]
-        items = [track for track in items if isinstance(track, dict)]
-
-    if not items:
-        print(f"{SPOTIFY_TAG} play_random no_tracks_found")
-        return "No Spotify tracks found in top or saved library."
-
-    track = random.choice(items)
-    uri = str(track.get("uri") or "").strip()
-    if not uri:
-        print(f"{SPOTIFY_TAG} play_random invalid_uri")
-        return "Could not pick a playable Spotify track."
-
-    await asyncio.to_thread(client.start_playback, uris=[uri])
-    print(f"{SPOTIFY_TAG} play_random selected_track={_track_label(track)}")
-    return f"Playing random track: {_track_label(track)}."
+    top_tracks = list((top_payload or {}).get("tracks") or [])
+    return _first_playable_track(top_tracks)

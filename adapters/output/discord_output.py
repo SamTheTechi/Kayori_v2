@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+
 from adapters.runtime.discord_runtime import DiscordRuntime
-from shared_types.models import MessageAttachment, OutboundMessage
+from shared_types.models import MessageAttachment, MessageSource, OutboundMessage
 
 
 @dataclass(slots=True)
@@ -74,7 +75,7 @@ class DiscordOutputAdapter:
         channel = await client.fetch_channel(int(target_id))
 
         should_reply = (
-            message.source_hint == "discord"
+            message.source == MessageSource.DISCORD
             and bool(message.reply_to_message_id)
         )
         if should_reply:
@@ -109,11 +110,10 @@ def _resolve_route(
     if explicit_user:
         return ("dm", explicit_user)
 
-    if message.source_hint == "discord":
-        if message.is_dm and message.target_user_id:
-            return ("dm", str(message.target_user_id))
-        if not message.is_dm and message.channel_id:
-            return ("channel", str(message.channel_id))
+    if message.target_user_id:
+        return ("dm", str(message.target_user_id))
+    if message.channel_id:
+        return ("channel", str(message.channel_id))
 
     if default_channel_id:
         return ("channel", str(default_channel_id))

@@ -74,18 +74,14 @@ def create_pipeline_graph(
         if not reply_text:
             return {"outbound": None}
 
-        target_user_id = None
-        if envelope.is_dm:
-            target_user_id = envelope.target_user_id or envelope.author_id
-
         outbound = OutboundMessage(
+            source=envelope.source,
             content=reply_text,
-            is_dm=envelope.is_dm,
             channel_id=envelope.channel_id,
-            target_user_id=target_user_id,
-            source_hint=envelope.source,
+            target_user_id=envelope.target_user_id,
+            message_id=None,
             reply_to_message_id=envelope.message_id,
-            mention_author=not envelope.is_dm,
+            mention_author=bool(envelope.channel_id and not envelope.target_user_id),
         )
         return {"outbound": outbound}
 
@@ -131,54 +127,6 @@ async def _main() -> None:
     bus = InMemoryMessageBus()
     state = InMemoryStateStore()
 
-    # tools = [
-    #     WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
-    #     ReminderTool(bus=bus, fallback_user_id=os.getenv("REMINDER_FALLBACK_USER_ID")),
-    #     UserDeviceTool(
-    #         state_store=state,
-    #         join_api_key=os.getenv("JOIN_API_KEY"),
-    #         join_device_id=os.getenv("JOIN_DEVICE_ID"),
-    #     ),
-    #     SpotifyTool(
-    #         enabled=str(os.getenv("ENABLE_SPOTIFY_TOOL", "false")).strip().lower()
-    #         in {"1", "true", "yes", "on"}
-    #     ),
-    # ]
-
-    tools = [
-        WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
-        ReminderTool(bus=bus),
-        SpotifyTool(
-            enabled=str(os.getenv("ENABLE_SPOTIFY_TOOL", "false")
-                        ).strip().lower()
-            in {"1", "true", "yes", "on"}
-        ),
-        TavilySearch(
-            max_results=3,
-            topic="general"
-        ),
-    ]
-
-    audit_enabled = str(os.getenv("ENABLE_TOOL_AUDIT", "true")
-                        ).strip().lower() in {"1", "true", "yes", "on"}
-    audit_path = os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl")
-    try:
-        audit_max_lines = int(
-            str(os.getenv("TOOL_AUDIT_MAX_LINES", "5000")).strip() or "5000")
-    except Exception:
-        audit_max_lines = 5000
-    audit_logger = JsonlAuditLogger(
-        path=audit_path,
-        enabled=audit_enabled,
-        max_lines=audit_max_lines,
-    )
-
-    agent = ReactAgentService.from_env(
-        model_name="openai/gpt-oss-120b",
-        tools=tools,
-        audit_logger=audit_logger,
-    )
-
     outputs: list[OutputAdapter] = []
     for name in enabled_outputs:
         if name == "console":
@@ -207,6 +155,40 @@ async def _main() -> None:
         raise RuntimeError("At least one output adapter must be enabled.")
 
     output_dispatcher = MultiOutputDispatcher(outputs=outputs)
+
+    tools = [
+        WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
+        ReminderTool(
+            output=output_dispatcher,
+            fallback_user_id=os.getenv("REMINDER_FALLBACK_USER_ID"),
+        ),
+        SpotifyTool(),
+        TavilySearch(
+            max_results=3,
+            topic="general"
+        ),
+    ]
+
+    audit_enabled = str(os.getenv("ENABLE_TOOL_AUDIT", "true")
+                        ).strip().lower() in {"1", "true", "yes", "on"}
+    audit_path = os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl")
+    try:
+        audit_max_lines = int(
+            str(os.getenv("TOOL_AUDIT_MAX_LINES", "5000")).strip() or "5000")
+    except Exception:
+        audit_max_lines = 5000
+    audit_logger = JsonlAuditLogger(
+        path=audit_path,
+        enabled=audit_enabled,
+        max_lines=audit_max_lines,
+    )
+
+    agent = ReactAgentService.from_env(
+        model_name="openai/gpt-oss-120b",
+        tools=tools,
+        audit_logger=audit_logger,
+    )
+
     graph = create_pipeline_graph(
         state_store=state, agent=agent, output=output_dispatcher)
     orchestrator = LangGraphOrchestrator(bus=bus, graph=graph)

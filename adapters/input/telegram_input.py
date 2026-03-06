@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from telegram import Message, Update
 
 from adapters.runtime.telegram_runtime import TelegramRuntime, TelegramUpdateHandler
-from shared_types.models import MessageAttachment, MessageEnvelope
+from shared_types.models import MessageAttachment, MessageEnvelope, MessageSource
 from shared_types.protocal import MessageBus
 
 
@@ -17,8 +17,10 @@ class TelegramInputAdapter:
     allowed_chat_ids: set[str] | None = None
 
     name: str = "telegram-input"
-    _stop_event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
-    _handler: TelegramUpdateHandler | None = field(default=None, init=False, repr=False)
+    _stop_event: asyncio.Event = field(
+        default_factory=asyncio.Event, init=False, repr=False)
+    _handler: TelegramUpdateHandler | None = field(
+        default=None, init=False, repr=False)
     _acquired: bool = field(default=False, init=False, repr=False)
 
     async def start(self) -> None:
@@ -63,20 +65,17 @@ class TelegramInputAdapter:
 
         user = message.from_user
         author_id = str(user.id) if user else None
-        is_dm = str(chat.type).lower() == "private"
+        is_private = str(chat.type).lower() == "private"
 
         envelope = MessageEnvelope(
-            source="telegram",
+            source=MessageSource.TELEGRAM,
             content=content,
-            is_dm=is_dm,
-            channel_id=chat_id,
+            channel_id=None if is_private else chat_id,
             author_id=author_id,
-            target_user_id=chat_id if is_dm else None,
+            target_user_id=chat_id if is_private else None,
             message_id=str(message.message_id) if message.message_id else None,
             attachments=attachments,
             metadata={
-                "chat_type": str(chat.type),
-                "chat_title": getattr(chat, "title", None),
                 "author_username": user.username if user else None,
                 "author_display_name": user.full_name if user else "",
                 "attachment_count": len(attachments),

@@ -47,14 +47,22 @@ class WeatherTool(BaseTool):
                 "WEATHER_DEFAULT_LOCATION."
             )
 
-        url = "http://api.weatherapi.com/v1/current.json"
+        url = "https://api.weatherapi.com/v1/current.json"
         params = {"key": self._api_key, "q": location_query, "aqi": "no"}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, params=params)
-            if response.status_code != 200:
-                return f"Weather API error ({response.status_code})."
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, params=params)
+        except httpx.HTTPError:
+            return "Weather request failed. Try again shortly."
+
+        if response.status_code != 200:
+            return _weather_error_message(response)
+
+        try:
             payload = response.json()
+        except ValueError:
+            return "Weather service returned an unreadable response."
 
         current = payload.get("current", {})
         condition = current.get("condition", {}).get("text", "Unknown")
@@ -157,3 +165,19 @@ async def _location_from_store(state_store: StateStore) -> str:
         return pinned_query
 
     return ""
+
+
+def _weather_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = _clean_text(error.get("message"))
+            if message:
+                return f"Weather API error ({response.status_code}): {message}"
+
+    return f"Weather API error ({response.status_code})."

@@ -16,7 +16,12 @@ class ConsoleOutputAdapter:
 
     async def send(self, message: OutboundMessage) -> None:
         target = message.target_user_id or message.channel_id or "unknown"
-        kind = "DM" if message.is_dm else "CHANNEL"
+        if message.target_user_id:
+            kind = "DM"
+        elif message.channel_id:
+            kind = "CHANNEL"
+        else:
+            kind = "UNKNOWN"
         extra = ""
         if message.attachments:
             media = ", ".join(

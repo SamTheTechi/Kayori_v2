@@ -1,3 +1,4 @@
+from tools.calender import get_calendar_tool_names, get_calendar_tools
 from tools.reminder import ReminderTool
 from tools.spotify import SpotifyTool
 from tools.user_device import UserDeviceTool
@@ -8,4 +9,6 @@ __all__ = [
     "UserDeviceTool",
     "SpotifyTool",
     "ReminderTool",
+    "get_calendar_tools",
+    "get_calendar_tool_names",
 ]

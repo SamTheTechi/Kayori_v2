@@ -4,58 +4,9 @@ from typing import Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
-from shared_types.models import MessageEnvelope, MoodState, OutboundMessage
-
-
-class GoalTask(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    title: str
-    due_at: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class Goal(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    title: str
-    priority: int = 3
-    status: str = "active"
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class CompanionState(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    inactivity_stage: str = "idle"
-    resentment_score: float = 0.0
-    last_proactive_message_at: str | None = None
-    updated_at: str | None = None
-
-
-class ProactiveKindPlan(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: str
-    content: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    critical: bool = False
-
-
-class ProactiveDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    allow: bool
-    prompt: str | None = None
-    reason: str
-    stage: str
-    resentment_score: float
-    mark_proactive_sent: bool = False
+from shared_types.models import MessageEnvelope, MessageSource, MoodState, OutboundMessage
 
 
 class AgentGraphState(TypedDict, total=False):
@@ -92,8 +43,7 @@ SchedulerMode = Literal["exact", "window"]
 class ScheduleRequest(TypedDict, total=False):
     mode: SchedulerMode
     content: str
-    source: str
-    is_dm: bool
+    source: MessageSource | str
     target_user_id: str | None
     channel_id: str | None
     metadata: dict[str, Any]
@@ -108,8 +58,7 @@ class ScheduledTask(TypedDict, total=False):
     due_ts: float
     created_at: str
     content: str
-    source: str
-    is_dm: bool
+    source: MessageSource | str
     target_user_id: str | None
     channel_id: str | None
     metadata: dict[str, Any]
@@ -117,12 +66,7 @@ class ScheduledTask(TypedDict, total=False):
 
 __all__ = [
     "AgentGraphState",
-    "CompanionState",
-    "Goal",
-    "GoalTask",
     "PipelineState",
-    "ProactiveDecision",
-    "ProactiveKindPlan",
     "ScheduleRequest",
     "ScheduledTask",
     "SchedulerMode",
