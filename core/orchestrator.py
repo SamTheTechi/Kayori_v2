@@ -1,22 +1,62 @@
-from shared_types.protocal import MessageBus
-from typing import Any
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from agent import ReactAgentService
+from shared_types.models import MessageEnvelope, OutboundMessage
+from shared_types.protocal import MessageBus, OutputAdapter, StateStore
 
 
-class LangGraphOrchestrator:
-    def __init__(
-        self,
-        *,
-        bus: MessageBus,
-        graph: Any,
-    ) -> None:
-        self._bus = bus
-        self._graph = graph
+@dataclass(slots=True)
+class AgentOrchestrator:
+    state_store: StateStore
+    agent: ReactAgentService
+    output: OutputAdapter
+    bus: MessageBus
 
     async def run(self) -> None:
         while True:
-            envelope = await self._bus.consume()
+            envelope: MessageEnvelope = await self.bus.consume()
             try:
-                await self._graph.ainvoke({"envelope": envelope})
+                await self._handle_envelope(envelope)
             except Exception as exc:
-                print(f"[orchestrator] graph invoke failed for envelope={
-                      envelope.id}: {exc}")
+                print(
+                    f"[orchestrator] failed for envelope={envelope.id}: {exc}"
+                )
+
+    async def _handle_envelope(self, envelope: MessageEnvelope) -> None:
+        user_text = (envelope.content or "").strip()
+        if not user_text:
+            return
+
+        mood = await self.state_store.get_mood()
+        thread_id = envelope.thread_id(fallback_user_id=envelope.author_id)
+
+        reply_text = await self.agent.respond(
+            user_text=user_text,
+            thread_id=thread_id,
+            mood=mood,
+            envelope=envelope,
+        )
+
+        content = (reply_text or "").strip()
+        if not content:
+            return None
+
+        outbound = OutboundMessage(
+            source=envelope.source,
+            content=content,
+            channel_id=envelope.channel_id,
+            target_user_id=envelope.target_user_id,
+            reply_to_message_id=envelope.message_id,
+            mention_author=bool(
+                envelope.channel_id and not envelope.target_user_id
+            ))
+
+        if outbound is None:
+            return
+
+        try:
+            await self.output.send(outbound)
+        except Exception as exc:
+            print(f"[orchestrator] output send failed: {exc}")

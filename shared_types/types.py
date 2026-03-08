@@ -6,7 +6,12 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from typing_extensions import Annotated
 
-from shared_types.models import MessageEnvelope, MessageSource, MoodState, OutboundMessage
+from shared_types.models import (
+    MessageEnvelope,
+    MessageSource,
+    MoodState,
+    OutboundMessage
+)
 
 
 class AgentGraphState(TypedDict, total=False):
@@ -20,14 +25,6 @@ class AgentGraphState(TypedDict, total=False):
     error_reason: str | None
 
 
-class PipelineState(TypedDict, total=False):
-    envelope: MessageEnvelope
-    mood: MoodState | None
-    thread_id: str
-    reply_text: str
-    outbound: OutboundMessage | None
-
-
 class ToolAuditEvent(TypedDict, total=False):
     timestamp: str
     event_type: Literal["tool_call", "tool_result", "tool_error"]
@@ -38,6 +35,7 @@ class ToolAuditEvent(TypedDict, total=False):
 
 
 SchedulerMode = Literal["exact", "window"]
+OutputSinkMode = Literal["direct", "multi"]
 
 
 class ScheduleRequest(TypedDict, total=False):
@@ -66,9 +64,9 @@ class ScheduledTask(TypedDict, total=False):
 
 __all__ = [
     "AgentGraphState",
-    "PipelineState",
     "ScheduleRequest",
     "ScheduledTask",
     "SchedulerMode",
     "ToolAuditEvent",
+    "OutputSinkMode",
 ]

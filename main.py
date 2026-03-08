@@ -1,15 +1,12 @@
-from __future__ import annotations
-
-import asyncio
 import os
-import warnings
-from typing import Any
-
+import asyncio
 from dotenv import load_dotenv
-from langgraph.graph import END, START, StateGraph
 
 from agent import ReactAgentService
-from core.orchestrator import LangGraphOrchestrator
+
+from core.orchestrator import AgentOrchestrator
+from core.ouputsink import OutputSink
+
 from adapters.safty.audit_logger import JsonlAuditLogger
 from adapters.bus.in_memory import InMemoryMessageBus
 from adapters.input.console_input import ConsoleInputGateway
@@ -17,97 +14,16 @@ from adapters.input.discord_input import DiscordInputAdapter
 from adapters.input.telegram_input import TelegramInputAdapter
 from adapters.output.console_output import ConsoleOutputAdapter
 from adapters.output.discord_output import DiscordOutputAdapter
-from adapters.dispatcher.ouput import MultiOutputDispatcher
 from adapters.output.telegram_output import TelegramOutputAdapter
+
 from adapters.runtime import DiscordRuntime, TelegramRuntime
 from adapters.state.in_memory import InMemoryStateStore
-from shared_types.models import OutboundMessage
+
 from shared_types.protocal import InputAdapter, OutputAdapter
-from shared_types.types import PipelineState
+from shared_types.types import OutputSinkMode
+
 from tools import WeatherTool, ReminderTool, SpotifyTool
 from langchain_tavily import TavilySearch
-
-warnings.filterwarnings(
-    "ignore",
-    message=r"Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater\.",
-    category=UserWarning,
-)
-
-
-def create_pipeline_graph(
-    *,
-    state_store: InMemoryStateStore,
-    agent: ReactAgentService,
-    output: OutputAdapter,
-):
-    workflow = StateGraph(PipelineState)
-
-    async def load_state_node(state: PipelineState) -> dict[str, Any]:
-        envelope = state["envelope"]
-        if not (envelope.content or "").strip():
-            return {"reply_text": "", "outbound": None}
-
-        mood = await state_store.get_mood()
-        thread_id = envelope.thread_id(fallback_user_id=envelope.author_id)
-        return {"mood": mood, "thread_id": thread_id}
-
-    async def call_agent_node(state: PipelineState) -> dict[str, str]:
-        envelope = state["envelope"]
-        user_text = (envelope.content or "").strip()
-        if not user_text:
-            return {"reply_text": ""}
-
-        thread_id = state.get("thread_id") or envelope.thread_id(
-            fallback_user_id=envelope.author_id
-        )
-        reply = await agent.respond(
-            user_text=user_text,
-            thread_id=thread_id,
-            mood=state.get("mood"),
-            envelope=envelope,
-        )
-        return {"reply_text": (reply or "").strip()}
-
-    def build_outbound_node(state: PipelineState) -> dict[str, OutboundMessage | None]:
-        envelope = state["envelope"]
-        reply_text = (state.get("reply_text") or "").strip()
-        if not reply_text:
-            return {"outbound": None}
-
-        outbound = OutboundMessage(
-            source=envelope.source,
-            content=reply_text,
-            channel_id=envelope.channel_id,
-            target_user_id=envelope.target_user_id,
-            message_id=None,
-            reply_to_message_id=envelope.message_id,
-            mention_author=bool(envelope.channel_id and not envelope.target_user_id),
-        )
-        return {"outbound": outbound}
-
-    async def send_output_node(state: PipelineState) -> dict[str, Any]:
-        outbound = state.get("outbound")
-        if outbound is None:
-            return {}
-
-        try:
-            await output.send(outbound)
-        except Exception as exc:
-            print(f"[orchestrator] output send failed: {exc}")
-        return {}
-
-    workflow.add_node("load_state", load_state_node)
-    workflow.add_node("call_agent", call_agent_node)
-    workflow.add_node("build_outbound", build_outbound_node)
-    workflow.add_node("send_output", send_output_node)
-
-    workflow.add_edge(START, "load_state")
-    workflow.add_edge("load_state", "call_agent")
-    workflow.add_edge("call_agent", "build_outbound")
-    workflow.add_edge("build_outbound", "send_output")
-    workflow.add_edge("send_output", END)
-
-    return workflow.compile()
 
 
 async def _main() -> None:
@@ -154,7 +70,10 @@ async def _main() -> None:
     if not outputs:
         raise RuntimeError("At least one output adapter must be enabled.")
 
-    output_dispatcher = MultiOutputDispatcher(outputs=outputs)
+    output_dispatcher = OutputSink(
+        outputs=outputs,
+        mode="direct"
+    )
 
     tools = [
         WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
@@ -169,18 +88,10 @@ async def _main() -> None:
         ),
     ]
 
-    audit_enabled = str(os.getenv("ENABLE_TOOL_AUDIT", "true")
-                        ).strip().lower() in {"1", "true", "yes", "on"}
     audit_path = os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl")
-    try:
-        audit_max_lines = int(
-            str(os.getenv("TOOL_AUDIT_MAX_LINES", "5000")).strip() or "5000")
-    except Exception:
-        audit_max_lines = 5000
     audit_logger = JsonlAuditLogger(
         path=audit_path,
-        enabled=audit_enabled,
-        max_lines=audit_max_lines,
+        enabled=True,
     )
 
     agent = ReactAgentService.from_env(
@@ -189,9 +100,12 @@ async def _main() -> None:
         audit_logger=audit_logger,
     )
 
-    graph = create_pipeline_graph(
-        state_store=state, agent=agent, output=output_dispatcher)
-    orchestrator = LangGraphOrchestrator(bus=bus, graph=graph)
+    orchestrator = AgentOrchestrator(
+        bus=bus,
+        state_store=state,
+        agent=agent,
+        output=output_dispatcher
+    )
 
     inputs: list[InputAdapter] = []
     for name in enabled_inputs:

@@ -14,7 +14,7 @@ class JsonlAuditLogger:
         self,
         path: str | Path,
         enabled: bool = True,
-        max_lines: int = 5000,
+        max_lines: int = 1000,
     ):
         self.path = Path(path)
         self.enabled = enabled

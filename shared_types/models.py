@@ -56,7 +56,8 @@ class MoodState:
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> "MoodState":
-        payload = {key: float(values.get(key, MOOD_NEUTRAL)) for key in EMOTIONS}
+        payload = {key: float(values.get(key, MOOD_NEUTRAL))
+                   for key in EMOTIONS}
         return cls(**payload)
 
     def clamp(self) -> "MoodState":
@@ -143,12 +144,13 @@ class MessageEnvelope:
     content: str
     channel_id: str | None = None
     author_id: str | None = None
-    target_user_id: str | None = None
     message_id: str | None = None
+    target_user_id: str | None = None
     attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def thread_id(self, fallback_user_id: str | None = None) -> str:
         if self.channel_id:
@@ -168,7 +170,6 @@ class MessageEnvelope:
             "channel_id": self.channel_id,
             "author_id": self.author_id,
             "target_user_id": self.target_user_id,
-            "message_id": self.message_id,
             "attachments": [attachment.to_dict() for attachment in self.attachments],
             "metadata": self.metadata,
             "id": self.id,
@@ -183,11 +184,11 @@ class MessageEnvelope:
             channel_id=_maybe_str(data.get("channel_id")),
             author_id=_maybe_str(data.get("author_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
-            message_id=_maybe_str(data.get("message_id")),
             attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
-            created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+            created_at=str(data.get("created_at")
+                           or datetime.now(timezone.utc).isoformat()),
         )
 
 
@@ -200,7 +201,8 @@ class OutboundMessage:
     message_id: str | None = None
     attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat())
     reply_to_message_id: str | None = None
     mention_author: bool = False
 
@@ -228,7 +230,8 @@ class OutboundMessage:
             message_id=_maybe_str(data.get("message_id")),
             attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
-            created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
+            created_at=str(data.get("created_at")
+                           or datetime.now(timezone.utc).isoformat()),
             reply_to_message_id=_maybe_str(data.get("reply_to_message_id")),
             mention_author=bool(data.get("mention_author", False)),
         )
