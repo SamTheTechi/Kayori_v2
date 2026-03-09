@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocal import MessageBus, SchedulerStore
+from shared_types.protocol import MessageBus, SchedulerStore
 from shared_types.types import ScheduleRequest, ScheduledTask
 
 

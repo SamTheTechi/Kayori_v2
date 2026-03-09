@@ -7,7 +7,7 @@ import discord
 
 from adapters.runtime.discord_runtime import DiscordMessageHandler, DiscordRuntime
 from shared_types.models import MessageAttachment, MessageEnvelope, MessageSource
-from shared_types.protocal import MessageBus
+from shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

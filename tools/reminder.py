@@ -8,7 +8,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
 from shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
-from shared_types.protocal import OutputAdapter
+from shared_types.protocol import OutputAdapter
 
 from tools.schemas import ReminderToolArgs
 

@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocal import MessageBus
+from shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

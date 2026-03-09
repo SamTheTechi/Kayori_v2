@@ -5,22 +5,24 @@ from dotenv import load_dotenv
 from agent import ReactAgentService
 
 from core.orchestrator import AgentOrchestrator
-from core.ouputsink import OutputSink
+from core.outputsink import OutputSink
 
-from adapters.safty.audit_logger import JsonlAuditLogger
+from adapters.audio import EdgeTtsAdapter, WhisperSttAdapter
+from adapters.safety.audit_logger import JsonlAuditLogger
 from adapters.bus.in_memory import InMemoryMessageBus
 from adapters.input.console_input import ConsoleInputGateway
 from adapters.input.discord_input import DiscordInputAdapter
 from adapters.input.telegram_input import TelegramInputAdapter
+from adapters.input.webhook_input import WebhookInputAdapter
 from adapters.output.console_output import ConsoleOutputAdapter
 from adapters.output.discord_output import DiscordOutputAdapter
 from adapters.output.telegram_output import TelegramOutputAdapter
+from adapters.output.webhook_output import WebhookOutputAdapter
 
-from adapters.runtime import DiscordRuntime, TelegramRuntime
+from adapters.runtime import DiscordRuntime, TelegramRuntime, WebhookRuntime
 from adapters.state.in_memory import InMemoryStateStore
 
-from shared_types.protocal import InputAdapter, OutputAdapter
-from shared_types.types import OutputSinkMode
+from shared_types.protocol import InputAdapter, OutputAdapter
 
 from tools import WeatherTool, ReminderTool, SpotifyTool
 from langchain_tavily import TavilySearch
@@ -28,8 +30,8 @@ from langchain_tavily import TavilySearch
 
 async def _main() -> None:
     load_dotenv()
-    enabled_inputs = ["discord"]
-    enabled_outputs = ["discord"]
+    enabled_inputs = ["discord", "webhook"]
+    enabled_outputs = ["discord", "webhook"]
 
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_output_user_id = os.getenv("DISCORD_USER_ID", "")
@@ -37,11 +39,35 @@ async def _main() -> None:
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
 
+    groq_api_key = str(os.getenv("API_KEY", "")).strip()
+
+    webhook_bearer_token = "123"
+    tts_base_url = "http://localhost:5050/v1"
+    tts_api_key = "123"
+    webhook_output_targets = [
+        item.strip()
+        for item in str(os.getenv("WEBHOOK_OUTPUT_URLS", "")).split(",")
+        if item.strip()
+    ]
+    webhook_output_token = str(
+        os.getenv("WEBHOOK_OUTPUT_BEARER_TOKEN", "")).strip() or None
+
     discord_runtime = DiscordRuntime(token=discord_token)
     telegram_runtime = TelegramRuntime(token=telegram_token)
+    webhook_runtime = (
+        WebhookRuntime(
+            host="127.0.0.1",
+            port=8080,
+            bearer_token=webhook_bearer_token,
+        )
+    )
 
     bus = InMemoryMessageBus()
     state = InMemoryStateStore()
+    webhook_tts = EdgeTtsAdapter(
+        api_key=tts_api_key,
+        base_url=tts_base_url,
+    )
 
     outputs: list[OutputAdapter] = []
     for name in enabled_outputs:
@@ -66,6 +92,15 @@ async def _main() -> None:
                     default_chat_id=telegram_output_chat_id,
                 )
             )
+        elif name == "webhook":
+            outputs.append(
+                WebhookOutputAdapter(
+                    targets=webhook_output_targets,
+                    runtime=webhook_runtime,
+                    tts=webhook_tts,
+                    bearer_token=webhook_output_token,
+                )
+            )
 
     if not outputs:
         raise RuntimeError("At least one output adapter must be enabled.")
@@ -79,7 +114,6 @@ async def _main() -> None:
         WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
         ReminderTool(
             output=output_dispatcher,
-            fallback_user_id=os.getenv("REMINDER_FALLBACK_USER_ID"),
         ),
         SpotifyTool(),
         TavilySearch(
@@ -126,6 +160,14 @@ async def _main() -> None:
                     allowed_chat_ids=None
                 )
             )
+        elif name == "webhook":
+            if webhook_runtime is None:
+                raise RuntimeError("Webhook input enabled without runtime.")
+            inputs.append(WebhookInputAdapter(
+                runtime=webhook_runtime,
+                bus=bus,
+                stt=WhisperSttAdapter(api_key=groq_api_key),
+            ))
 
     if not inputs:
         raise RuntimeError("At least one input adapter must be enabled.")
@@ -134,7 +176,13 @@ async def _main() -> None:
         orchestrator.run(), name="orchestrator")
     input_tasks: list[asyncio.Task[None]] = []
 
+    for adapter in inputs:
+        if isinstance(adapter, WebhookInputAdapter):
+            adapter.register_routes()
+
     await output_dispatcher.start()
+    if webhook_runtime is not None:
+        await webhook_runtime.start()
 
     try:
         for adapter in inputs:
@@ -155,6 +203,9 @@ async def _main() -> None:
 
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
+
+        if webhook_runtime is not None:
+            await webhook_runtime.stop()
 
         await output_dispatcher.stop()
 

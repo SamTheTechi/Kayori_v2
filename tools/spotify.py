@@ -11,6 +11,7 @@ from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyOAuth
 
 from tools.schemas import SpotifyToolArgs
+from core.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 SPOTIFY_TAG = "[spotify_tool]"
 NO_DEVICE_MESSAGE = "No active Spotify device found."
@@ -41,12 +42,24 @@ class SpotifyTool(BaseTool):
     args_schema: type[BaseModel] = SpotifyToolArgs
 
     _client: spotipy.Spotify | None = PrivateAttr(default=None)
+    _circuit: CircuitBreaker = PrivateAttr()
 
-    def __init__(self, *, enabled: bool | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool | None = None,
+        failure_threshold: int = 5,
+        recovery_timeout_seconds: float = 30.0,
+    ) -> None:
         # Backward-compatible with the current app wiring. Tool enablement should
         # be controlled by whether this tool is added to the tools list at all.
         del enabled
         super().__init__()
+        self._circuit = CircuitBreaker(
+            name="spotify_api",
+            failure_threshold=failure_threshold,
+            recovery_timeout_seconds=recovery_timeout_seconds,
+        )
 
     async def _arun(
         self,
@@ -83,22 +96,44 @@ class SpotifyTool(BaseTool):
             return "Failed to initialize Spotify client."
 
         try:
+            result = await self._circuit.call(
+                lambda: self._execute_spotify_command(client, normalized, cleaned_query, step_value),
+                fallback="Spotify service temporarily unavailable (circuit open). Try again in a moment.",
+            )
+        except CircuitOpenError:
+            return "Spotify service temporarily unavailable (circuit open). Try again in a moment."
+        except SpotifyException as exc:
+            return _format_spotify_error(exc)
+        except Exception:
+            return "Spotify request failed."
+
+        print(f"{SPOTIFY_TAG} command_ok command={normalized}")
+        return result
+
+    async def _execute_spotify_command(
+        self,
+        client: spotipy.Spotify,
+        normalized: str,
+        cleaned_query: str | None,
+        step_value: int,
+    ) -> str:
+        try:
             if normalized == "play":
-                result = await _resume_playback(client)
+                return await _resume_playback(client)
             elif normalized == "play_track":
-                result = await _play_track(client, query=cleaned_query or "")
+                return await _play_track(client, query=cleaned_query or "")
             elif normalized == "pause":
-                result = await _pause_playback(client)
+                return await _pause_playback(client)
             elif normalized == "next":
-                result = await _skip_to_next(client)
+                return await _skip_to_next(client)
             elif normalized == "previous":
-                result = await _skip_to_previous(client)
+                return await _skip_to_previous(client)
             elif normalized == "now_playing":
-                result = await _now_playing(client)
+                return await _now_playing(client)
             elif normalized == "volume_up":
-                result = await _adjust_volume(client, direction=1, step=step_value)
+                return await _adjust_volume(client, direction=1, step=step_value)
             elif normalized == "volume_down":
-                result = await _adjust_volume(client, direction=-1, step=step_value)
+                return await _adjust_volume(client, direction=-1, step=step_value)
             else:
                 return _unsupported_command_message(normalized)
         except SpotifyException as exc:
@@ -106,13 +141,10 @@ class SpotifyTool(BaseTool):
                 f"{SPOTIFY_TAG} spotify_exception command={normalized} "
                 f"status={getattr(exc, 'http_status', None)} err={exc}"
             )
-            return _format_spotify_error(exc)
+            raise
         except Exception as exc:
             print(f"{SPOTIFY_TAG} execute_error command={normalized} err={exc}")
-            return "Spotify request failed."
-
-        print(f"{SPOTIFY_TAG} command_ok command={normalized}")
-        return result
+            raise
 
     def _run(self, *args: Any, **kwargs: Any) -> str:
         raise NotImplementedError("Use async execution for spotify_tool.")

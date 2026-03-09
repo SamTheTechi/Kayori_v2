@@ -168,7 +168,12 @@ class MoodEngine:
             setattr(next_state, tone, value)
         return next_state.clamp()
 
-    def spike(self, current: MoodState, low: float = 0.08, high: float = 0.2) -> MoodState:
+    def spike(
+            self,
+            current: MoodState,
+            low: float = 0.08,
+            high: float = 0.2
+    ) -> MoodState:
         next_state = MoodState.from_dict(current.as_dict())
         weighted_tones = [*FAST_EMOTIONS, *FAST_EMOTIONS, *SLOW_EMOTIONS]
         tone = random.choice(weighted_tones)

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from shared_types.models import OutboundMessage, MessageSource
 from shared_types.types import OutputSinkMode
-from shared_types.protocal import OutputAdapter
+from shared_types.protocol import OutputAdapter
 
 
 @dataclass(slots=True)
@@ -55,6 +55,8 @@ class OutputSink:
             source_name = "telegram"
         elif source == MessageSource.CONSOLE:
             source_name = "console"
+        elif source == MessageSource.WEBHOOK:
+            source_name = "webhook"
         else:
             source_name = None
 

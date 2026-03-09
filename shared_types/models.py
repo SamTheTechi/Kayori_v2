@@ -27,6 +27,7 @@ class MessageSource(str, Enum):
     DISCORD = "discord"
     TELEGRAM = "telegram"
     CONSOLE = "console"
+    WEBHOOK = "webhook"
     REMINDER = "reminder"
     INTERNAL = "internal"
 

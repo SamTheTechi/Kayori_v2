@@ -18,7 +18,7 @@ The repo is still under active refactor, but the structure is much cleaner than 
 
 #### 1. Adapter-Based Runtime
 
-- Discord, Telegram, and console input/output adapters exist in the repo
+- Discord, Telegram, console, and REST/webhook channels exist in the repo
 - Runtimes are separated from adapters so platform connection lifecycle is reusable
 - Input and output are wired independently in `main.py`
 
@@ -43,7 +43,14 @@ The repo is still under active refactor, but the structure is much cleaner than 
 - `multi` mode broadcasts one outbound message to every configured output adapter
 - Routing is handled by `OutputSink`
 
-#### 5. State + Memory Foundations
+#### 5. REST / Webhook Channel
+
+- FastAPI server lifecycle lives under `adapters/runtime/`
+- `WebhookInputAdapter` accepts authenticated HTTP requests and publishes them into the bus
+- `WebhookOutputAdapter` posts outbound messages to external webhook targets
+- The webhook runtime is designed to register more endpoints later without redesigning the server
+
+#### 6. State + Memory Foundations
 
 - In-memory state store is the active boot path right now
 - Redis state and bus adapters exist but are not used by default
@@ -77,6 +84,7 @@ As of the current `main.py`:
 - Message bus: in-memory
 - Output mode: `direct`
 - Model path: `ChatGroq` via `ReactAgentService.from_env(...)`
+- Webhook channel: optional, disabled unless enabled by env
 
 ## Mood System Status
 
@@ -121,6 +129,19 @@ SPOTIFY_REDIRECT_URI=
 
 TAVILY_API_KEY=
 
+OUTPUT_SINK_MODE=direct
+
+ENABLE_WEBHOOK_INPUT=false
+ENABLE_WEBHOOK_OUTPUT=false
+WEBHOOK_SERVER_HOST=127.0.0.1
+WEBHOOK_SERVER_PORT=8080
+WEBHOOK_BEARER_TOKEN=123
+WEBHOOK_OUTPUT_URLS=
+WEBHOOK_OUTPUT_BEARER_TOKEN=
+
+EDGE_TTS_BASE_URL=http://localhost:5050/v1
+EDGE_TTS_API_KEY=123
+
 ENABLE_TOOL_AUDIT=true
 TOOL_AUDIT_LOG_PATH=logs/tool_audit.jsonl
 TOOL_AUDIT_MAX_LINES=5000
@@ -132,6 +153,10 @@ Notes:
 - `TELEGRAM_CHAT_ID` is used as the default Telegram output target
 - `WEATHER_API_KEY` is required for the weather tool
 - `TAVILY_API_KEY` is required if you want Tavily search to work
+- `WEBHOOK_BEARER_TOKEN` protects inbound REST/webhook requests
+- `WEBHOOK_OUTPUT_URLS` is a comma-separated list of outbound webhook targets
+- `EDGE_TTS_BASE_URL` points to your local `openai-edge-tts` server
+- `EDGE_TTS_API_KEY` defaults to `123` for your current local TTS setup
 
 ## Installation
 
@@ -170,10 +195,53 @@ Present in repo but not part of the default runtime path:
 
 - Telegram adapters/runtime
 - Console adapters
+- REST/webhook channel unless explicitly enabled in env
 - Redis bus/state adapters
 - Mood engine integration
 - Episodic / graph memory integration
 - Scheduler-driven proactive behavior
+
+## REST / Webhook Usage
+
+If enabled, the runtime exposes:
+
+- `GET /healthz`
+- `GET /webhooks/routes`
+- `POST /webhooks/inbound`
+- `POST /webhooks/audio/inbound`
+- `POST /webhooks/audio/chat`
+
+Example inbound call:
+
+```bash
+curl -X POST http://127.0.0.1:8080/webhooks/inbound \
+  -H "Authorization: Bearer 123" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"hello from automation","source":"internal","author_id":"manual-test","metadata":{"tag":"smoke"}}'
+```
+
+Audio -> STT -> publish into the bus:
+
+```bash
+curl -X POST http://127.0.0.1:8080/webhooks/audio/inbound \
+  -H "Authorization: Bearer 123" \
+  -F "audio=@sample.wav" \
+  -F "source=internal" \
+  -F "author_id=tasker"
+```
+
+Audio -> STT -> agent -> TTS direct reply:
+
+```bash
+curl -X POST http://127.0.0.1:8080/webhooks/audio/chat \
+  -H "Authorization: Bearer 123" \
+  -F "audio=@sample.wav" \
+  -F "source=internal" \
+  -F "author_id=tasker" \
+  -F "voice=en-US-AvaNeural" \
+  -F "speed=1.0" \
+  --output reply.mp3
+```
 
 ## Reminder Routing
 
@@ -206,3 +274,10 @@ The current design is clearly moving toward:
 ## License
 
 MIT. See `LICENSE`.
+
+
+ curl -X POST http://127.0.0.1:8080/webhooks/audio \
+    -H "Authorization: Bearer 123" \
+    -F "audio=@cute_speech.mp3;type=audio/mpeg" \
+    -F "author_id=tasker" \
+    -F "channel_id=tasker-webhook"

@@ -7,9 +7,9 @@ import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from shared_types.protocal import StateStore
-
+from shared_types.protocol import StateStore
 from tools.schemas import WeatherToolArgs
+from core.circuit_breaker import CircuitBreaker, CircuitOpenError
 
 
 class WeatherTool(BaseTool):
@@ -19,11 +19,24 @@ class WeatherTool(BaseTool):
 
     _state_store: StateStore = PrivateAttr()
     _api_key: str | None = PrivateAttr(default=None)
+    _circuit: CircuitBreaker = PrivateAttr()
 
-    def __init__(self, *, state_store: StateStore, api_key: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        state_store: StateStore,
+        api_key: str | None,
+        failure_threshold: int = 5,
+        recovery_timeout_seconds: float = 30.0,
+    ) -> None:
         super().__init__()
         self._state_store = state_store
         self._api_key = api_key
+        self._circuit = CircuitBreaker(
+            name="weather_api",
+            failure_threshold=failure_threshold,
+            recovery_timeout_seconds=recovery_timeout_seconds,
+        )
 
     async def _arun(
         self,
@@ -51,9 +64,14 @@ class WeatherTool(BaseTool):
         params = {"key": self._api_key, "q": location_query, "aqi": "no"}
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.HTTPError:
+            response = await self._circuit.call(
+                lambda: self._fetch_weather(url, params),
+                fallback=None,
+            )
+        except CircuitOpenError:
+            return "Weather service temporarily unavailable (circuit open). Try again in a moment."
+
+        if response is None:
             return "Weather request failed. Try again shortly."
 
         if response.status_code != 200:
@@ -85,6 +103,18 @@ class WeatherTool(BaseTool):
 
     def _run(self, *args: Any, **kwargs: Any) -> str:
         raise NotImplementedError("Use async execution for weather_tool.")
+
+    async def _fetch_weather(
+        self,
+        url: str,
+        params: dict[str, Any],
+    ) -> httpx.Response | None:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, params=params)
+            return response
+        except httpx.HTTPError:
+            return None
 
 
 def _clean_text(value: Any) -> str:

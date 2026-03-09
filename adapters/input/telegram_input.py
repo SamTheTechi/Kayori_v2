@@ -7,7 +7,7 @@ from telegram import Message, Update
 
 from adapters.runtime.telegram_runtime import TelegramRuntime, TelegramUpdateHandler
 from shared_types.models import MessageAttachment, MessageEnvelope, MessageSource
-from shared_types.protocal import MessageBus
+from shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

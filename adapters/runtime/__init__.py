@@ -1,4 +1,9 @@
 from adapters.runtime.discord_runtime import DiscordRuntime
 from adapters.runtime.telegram_runtime import TelegramRuntime
 
-__all__ = ["DiscordRuntime", "TelegramRuntime"]
+try:
+    from adapters.runtime.webhook_runtime import WebhookRuntime
+except ModuleNotFoundError:
+    WebhookRuntime = None
+
+__all__ = ["DiscordRuntime", "TelegramRuntime", "WebhookRuntime"]

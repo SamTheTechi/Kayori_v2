@@ -10,7 +10,7 @@ from langchain_groq import ChatGroq
 
 from agent.react_agent import create_react_agent_graph
 from shared_types.models import MessageEnvelope, MoodState
-from shared_types.protocal import ToolAuditLogger
+from shared_types.protocol import ToolAuditLogger
 from shared_types.types import ToolAuditEvent
 
 
