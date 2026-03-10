@@ -19,8 +19,11 @@ from adapters.safety.audit_logger import JsonlAuditLogger
 from adapters.state.in_memory import InMemoryStateStore
 from agent import ReactAgentService
 from core import AgentOrchestrator, OutputSink
+from logger import get_logger
 from shared_types.protocol import InputAdapter, OutputAdapter
 from tools import ReminderTool, SpotifyTool, WeatherTool
+
+logger = get_logger("examples.main")
 
 
 async def _main() -> None:
@@ -51,8 +54,8 @@ async def _main() -> None:
     discord_runtime = DiscordRuntime(token=discord_token)
     telegram_runtime = TelegramRuntime(token=telegram_token)
     webhook_runtime = WebhookRuntime(
-        host="127.0.0.1",
-        port=8080,
+        host="0.0.0.0",
+        port=80,
         bearer_token=webhook_bearer_token,
     )
 
@@ -179,7 +182,12 @@ async def _main() -> None:
             try:
                 await adapter.stop()
             except Exception as exc:
-                print(f"[shutdown] input stop failed ({adapter.name}): {exc}")
+                await logger.exception(
+                    "input_stop_failed",
+                    "Input adapter stop failed during shutdown.",
+                    context={"adapter": adapter.name},
+                    error=exc,
+                )
 
         for task in input_tasks:
             task.cancel()

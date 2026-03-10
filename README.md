@@ -20,7 +20,7 @@ The repo is still under active refactor, but the structure is much cleaner than 
 
 - Discord, Telegram, console, and REST/webhook channels exist in the repo
 - Runtimes are separated from adapters so platform connection lifecycle is reusable
-- Input and output are wired independently in `main.py`
+- Input and output are wired independently in `examples/main.py`
 
 #### 2. Orchestrated Agent Flow
 
@@ -58,7 +58,7 @@ The repo is still under active refactor, but the structure is much cleaner than 
 
 ## Architecture Overview
 
-- `main.py` boots the app, wires runtimes, state store, tools, agent, orchestrator, and adapters
+- `examples/main.py` boots the app, wires runtimes, state store, tools, agent, orchestrator, and adapters
 - `core/orchestrator.py` handles message consumption, state lookup, agent execution, and outbound message creation
 - `agent/service.py` builds and runs the ReAct graph
 - `core/ouputsink.py` routes outbound messages by mode
@@ -76,7 +76,7 @@ Current default runtime path:
 
 ## Current Runtime Defaults
 
-As of the current `main.py`:
+As of the current `examples/main.py`:
 
 - Input: Discord
 - Output: Discord
@@ -177,7 +177,7 @@ uv sync
 ## Run
 
 ```bash
-python main.py
+python examples/main.py
 ```
 
 ## Active Modules vs Present Modules

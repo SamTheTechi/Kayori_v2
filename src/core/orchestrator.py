@@ -3,8 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent import ReactAgentService
+from logger import get_logger
 from shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
 from shared_types.protocol import MessageBus, OutputAdapter, StateStore
+
+logger = get_logger("core.orchestrator")
 
 
 @dataclass(slots=True)
@@ -20,7 +23,18 @@ class AgentOrchestrator:
             try:
                 await self._handle_envelope(envelope)
             except Exception as exc:
-                print(f"[orchestrator] failed for envelope={envelope.id}: {exc}")
+                await logger.exception(
+                    "orchestrator_envelope_failed",
+                    "Failed to process inbound envelope.",
+                    context={
+                        "envelope_id": envelope.id,
+                        "source": str(envelope.source),
+                        "author_id": envelope.author_id,
+                        "channel_id": envelope.channel_id,
+                        "message_id": envelope.message_id,
+                    },
+                    error=exc,
+                )
 
     async def _handle_envelope(self, envelope: MessageEnvelope) -> None:
         user_text = (envelope.content or "").strip()
@@ -62,7 +76,17 @@ class AgentOrchestrator:
                 try:
                     await self.output.send(outbound)
                 except Exception as exc:
-                    print(f"[orchestrator] output send failed: {exc}")
+                    await logger.exception(
+                        "orchestrator_output_send_failed",
+                        "Failed to send webhook empty-response acknowledgement.",
+                        context={
+                            "envelope_id": envelope.id,
+                            "source": str(envelope.source),
+                            "channel_id": envelope.channel_id,
+                            "target_user_id": envelope.target_user_id,
+                        },
+                        error=exc,
+                    )
             return None
 
         outbound = OutboundMessage(
@@ -84,4 +108,14 @@ class AgentOrchestrator:
         try:
             await self.output.send(outbound)
         except Exception as exc:
-            print(f"[orchestrator] output send failed: {exc}")
+            await logger.exception(
+                "orchestrator_output_send_failed",
+                "Failed to send outbound response.",
+                context={
+                    "envelope_id": envelope.id,
+                    "source": str(envelope.source),
+                    "channel_id": envelope.channel_id,
+                    "target_user_id": envelope.target_user_id,
+                },
+                error=exc,
+            )

@@ -1,47 +1,42 @@
-# stage one, build packages
-FROM python:3.13.2-slim AS builder
+FROM python:3.14-slim AS builder
 
-WORKDIR /usr
-
-RUN apt-get update && apt-get install -y --no-install-recommends\
-  libgl1-mesa-glx \
-  build-essential \
-  git \
-  gcc \
-  curl \
-  cmake \
-  && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# stage three, building my pyhton agent 
-FROM builder AS python-builder
-
-WORKDIR /python-app
-
-COPY requirements.txt .
-
-RUN pip install --upgrade pip && \
-  pip install --prefix=/install --no-cache-dir -r requirements.txt 
-
-
-# stage four, copying essesntial and creating image
-FROM python:3.13.2-slim 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends\
-  sox \
-  supervisor \
-  redis-server \
-  && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    gcc \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=python-builder /install /usr/local
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-RUN chmod +x /usr/local/bin/whisper-cli
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
-COPY . .
-RUN mkdir -p /etc/supervisor/conf.d
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+FROM python:3.14-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH=/app/src
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    sox \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/.venv /app/.venv
+COPY src ./src
+COPY examples ./examples
+COPY .env.example ./example.env
 
 EXPOSE 8080
 
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["python", "examples/main.py"]

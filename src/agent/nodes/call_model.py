@@ -5,9 +5,11 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
+from logger import get_logger
 from shared_types.types import AgentGraphState
 
 FALLBACK_TEXT = "I hit a temporary issue contacting the model. Please try again."
+logger = get_logger("agent.call_model")
 
 
 def build_call_model_node(model: Any, timeout_seconds: int = 60):
@@ -30,7 +32,12 @@ def build_call_model_node(model: Any, timeout_seconds: int = 60):
                     timeout=timeout_seconds,
                 )
         except Exception as exc:
-            print(exc, "error message")
+            await logger.exception(
+                "model_call_failed",
+                "Model invocation failed in call_model node.",
+                context={"timeout_seconds": timeout_seconds},
+                error=exc,
+            )
             return {
                 "messages": [AIMessage(content=FALLBACK_TEXT)],
                 "error_reason": str(exc),

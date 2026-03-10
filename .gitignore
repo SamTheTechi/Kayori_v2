@@ -10,6 +10,7 @@ __pycache__/
 credentials.json
 firebase.json
 token.json
+future.md
 
 # Distribution / packaging
 .Python

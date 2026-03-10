@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -98,7 +99,7 @@ class CircuitBreaker:
             CircuitOpenError: If circuit is open and no fallback provided
         """
         async with self._lock:
-            if not self._allow_request():
+            if not await self._allow_request():
                 if fallback is not None:
                     return fallback
                 retry_after = self._retry_after_seconds()
@@ -108,10 +109,9 @@ class CircuitBreaker:
                 self._half_open_calls += 1
 
         try:
-            if asyncio.iscoroutinefunction(func):
-                result = await func()
-            else:
-                result = func()
+            result = func()
+            if inspect.isawaitable(result):
+                result = await result
             await self._on_success()
             return result
         except Exception:

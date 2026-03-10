@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from logger import get_logger
 from shared_types.models import MessageSource, OutboundMessage
 from shared_types.protocol import OutputAdapter
 from shared_types.types import OutputSinkMode
+
+logger = get_logger("core.outputsink")
 
 
 @dataclass(slots=True)
@@ -28,10 +31,14 @@ class OutputSink:
 
         selected_outputs = self._select_outputs(message)
         if not selected_outputs:
-            print(
-                f"[output-dispatcher] dropped message with no outputs for source={
-                    message.source
-                }"
+            await logger.warning(
+                "output_dropped_no_targets",
+                "Dropped outbound message because no outputs were selected.",
+                context={
+                    "source": str(message.source),
+                    "channel_id": message.channel_id,
+                    "target_user_id": message.target_user_id,
+                },
             )
             return
 
@@ -41,7 +48,17 @@ class OutputSink:
         )
         for output, result in zip(selected_outputs, results, strict=False):
             if isinstance(result, Exception):
-                print(f"[output-dispatcher] send failed on {output.name}: {result}")
+                await logger.exception(
+                    "output_send_failed",
+                    "Output adapter send failed.",
+                    context={
+                        "adapter": output.name,
+                        "source": str(message.source),
+                        "channel_id": message.channel_id,
+                        "target_user_id": message.target_user_id,
+                    },
+                    error=result,
+                )
 
     def _select_outputs(self, message: OutboundMessage) -> list[OutputAdapter]:
         if self.mode == "multi":

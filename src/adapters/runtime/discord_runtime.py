@@ -6,7 +6,10 @@ from dataclasses import dataclass, field
 
 import discord
 
+from logger import get_logger
+
 DiscordMessageHandler = Callable[[discord.Message], Awaitable[None]]
+logger = get_logger("runtime.discord")
 
 
 @dataclass(slots=True)
@@ -78,7 +81,11 @@ class DiscordRuntime:
         @client.event
         async def on_ready() -> None:
             self._ready.set()
-            print(f"[discord] connected as {client.user}")
+            await logger.info(
+                "discord_ready",
+                "Discord runtime connected.",
+                context={"user": str(client.user)},
+            )
 
         @client.event
         async def on_message(message: discord.Message) -> None:
@@ -90,7 +97,16 @@ class DiscordRuntime:
                 try:
                     await handler(message)
                 except Exception as exc:
-                    print(f"[discord-runtime] handler error: {exc}")
+                    await logger.exception(
+                        "discord_handler_failed",
+                        "Discord message handler failed.",
+                        context={
+                            "message_id": str(message.id),
+                            "author_id": str(message.author.id),
+                            "channel_id": str(message.channel.id),
+                        },
+                        error=exc,
+                    )
 
         self._client = client
         self._start_task = asyncio.create_task(

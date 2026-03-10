@@ -7,7 +7,10 @@ from dataclasses import dataclass, field
 from telegram import Bot, Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
+from logger import get_logger
+
 TelegramUpdateHandler = Callable[[Update], Awaitable[None]]
+logger = get_logger("runtime.telegram")
 
 
 @dataclass(slots=True)
@@ -81,7 +84,14 @@ class TelegramRuntime:
                     timeout=self.poll_timeout_seconds,
                     allowed_updates=Update.ALL_TYPES,
                 )
-                print("[telegram] polling started")
+                await logger.info(
+                    "telegram_polling_started",
+                    "Telegram polling started.",
+                    context={
+                        "poll_interval_seconds": self.poll_interval_seconds,
+                        "poll_timeout_seconds": self.poll_timeout_seconds,
+                    },
+                )
 
     async def release_polling(self) -> None:
         should_release = False
@@ -124,4 +134,11 @@ class TelegramRuntime:
             try:
                 await handler(update)
             except Exception as exc:
-                print(f"[telegram-runtime] handler error: {exc}")
+                await logger.exception(
+                    "telegram_handler_failed",
+                    "Telegram update handler failed.",
+                    context={
+                        "update_id": getattr(update, "update_id", None),
+                    },
+                    error=exc,
+                )

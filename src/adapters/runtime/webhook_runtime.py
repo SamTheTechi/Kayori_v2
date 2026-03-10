@@ -9,7 +9,10 @@ from uuid import uuid4
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 
+from logger import get_logger
+
 WebhookEndpoint = Callable[[Request], Awaitable[Any]]
+logger = get_logger("runtime.webhook")
 
 
 @dataclass(slots=True)
@@ -102,7 +105,11 @@ class WebhookRuntime:
         )
         self._started = True
         await self._wait_until_started()
-        print(f"[webhook] listening on http://{self.host}:{self.port}")
+        await logger.info(
+            "webhook_runtime_started",
+            "Webhook runtime listening.",
+            context={"host": self.host, "port": self.port},
+        )
 
     async def stop(self) -> None:
         if not self._started:

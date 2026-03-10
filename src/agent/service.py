@@ -9,9 +9,12 @@ from langchain_core.tools import BaseTool
 from langchain_groq import ChatGroq
 
 from agent.react_agent import create_react_agent_graph
+from logger import get_logger
 from shared_types.models import MessageEnvelope, MoodState
 from shared_types.protocol import ToolAuditLogger
 from shared_types.types import ToolAuditEvent
+
+logger = get_logger("agent.service")
 
 
 @dataclass(slots=True)
@@ -99,7 +102,15 @@ class ReactAgentService:
         try:
             result = await self._graph.ainvoke(state_input)
         except Exception as exc:
-            print(f"[agent] graph invoke failed for thread={thread_id}: {exc}")
+            await logger.exception(
+                "agent_graph_invoke_failed",
+                "Agent graph invocation failed.",
+                context={
+                    "thread_id": thread_id,
+                    "source": str(getattr(envelope, "source", "") or "unknown"),
+                },
+                error=exc,
+            )
             return "I hit a temporary issue contacting the model. Please try again."
 
         await self._audit_tool_events(
@@ -120,8 +131,8 @@ class ReactAgentService:
         thread_id: str,
         envelope: MessageEnvelope | None,
     ) -> None:
-        logger = self.audit_logger
-        if logger is None:
+        audit_logger = self.audit_logger
+        if audit_logger is None:
             return
 
         all_messages = list(result.get("messages") or [])
@@ -160,6 +171,15 @@ class ReactAgentService:
                     "tool_input": tool_input,
                 }
                 try:
-                    await logger.log_tool_event(event)
+                    await audit_logger.log_tool_event(event)
                 except Exception as exc:
-                    print(f"[audit] failed to log tool_call event: {exc}")
+                    await logger.exception(
+                        "tool_audit_log_failed",
+                        "Failed to persist tool audit event.",
+                        context={
+                            "thread_id": thread_id,
+                            "tool_name": tool_name,
+                            "source": source,
+                        },
+                        error=exc,
+                    )

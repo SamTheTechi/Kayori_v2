@@ -4,7 +4,7 @@ from core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from core.mood_engine import MoodEngine
 from core.orchestrator import AgentOrchestrator
 from core.outputsink import OutputSink
-from core.task_scheduler import TaskScheduler
+from core.scheduler import TaskScheduler
 
 __all__ = [
     "AgentOrchestrator",
