@@ -1,13 +1,20 @@
 repos:
   - repo: local
     hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format src/ examples/ tests/
+        language: system
+        pass_filenames: false
+
       - id: ruff-check
         name: ruff check
         entry: bash tests/run_tests.sh
         language: system
         pass_filenames: false
+
       - id: import-smoke
         name: import smoke
-        entry: ./tests/smoke_imports.py
+        entry: python tests/smoke_imports.py
         language: system
         pass_filenames: false

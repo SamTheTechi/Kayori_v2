@@ -30,8 +30,7 @@ def create_react_agent_graph(
     graph.add_node("prepare_context", build_prepare_context_node())
     graph.add_node(
         "call_model",
-        build_call_model_node(
-            model=bound_model, timeout_seconds=timeout_seconds),
+        build_call_model_node(model=bound_model, timeout_seconds=timeout_seconds),
     )
     graph.add_node("postprocess", build_postprocess_node())
     graph.add_node(

@@ -133,8 +133,7 @@ async def _main() -> None:
         elif name == "discord":
             if discord_runtime is None:
                 raise RuntimeError("Discord input enabled without runtime.")
-            inputs.append(DiscordInputAdapter(
-                runtime=discord_runtime, bus=bus))
+            inputs.append(DiscordInputAdapter(runtime=discord_runtime, bus=bus))
         elif name == "telegram":
             if telegram_runtime is None:
                 raise RuntimeError("Telegram input enabled without runtime.")
@@ -157,8 +156,7 @@ async def _main() -> None:
     if not inputs:
         raise RuntimeError("At least one input adapter must be enabled.")
 
-    orchestrator_task = asyncio.create_task(
-        orchestrator.run(), name="orchestrator")
+    orchestrator_task = asyncio.create_task(orchestrator.run(), name="orchestrator")
     input_tasks: list[asyncio.Task[None]] = []
 
     for adapter in inputs:
@@ -172,8 +170,7 @@ async def _main() -> None:
     try:
         for adapter in inputs:
             input_tasks.append(
-                asyncio.create_task(
-                    adapter.start(), name=f"input-{adapter.name}")
+                asyncio.create_task(adapter.start(), name=f"input-{adapter.name}")
             )
 
         await asyncio.gather(*input_tasks)

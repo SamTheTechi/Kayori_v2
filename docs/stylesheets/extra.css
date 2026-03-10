@@ -1,0 +1,91 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Nunito:wght@400;600;700;800&display=swap");
+
+:root {
+  --md-primary-fg-color: #f05ca8;
+  --md-primary-fg-color--light: #ff89c1;
+  --md-primary-fg-color--dark: #c93d84;
+  --md-accent-fg-color: #b46cff;
+  --md-accent-fg-color--transparent: rgb(180 108 255 / 0.14);
+  --kayori-pink: #ff72b6;
+  --kayori-pink-soft: #ffd4e8;
+  --kayori-purple: #c089ff;
+  --kayori-purple-deep: #8f4fe2;
+  --kayori-ink: #1f1730;
+  --kayori-mist: #fcf6ff;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #fff9fc;
+  --md-default-fg-color: #2b1b37;
+  --md-default-fg-color--light: #65546d;
+  --md-default-fg-color--lighter: #8e7e98;
+  --md-typeset-a-color: var(--kayori-purple-deep);
+  --md-code-bg-color: #fff1f8;
+  --md-code-fg-color: #5b2450;
+}
+
+.md-header {
+  background:
+    linear-gradient(90deg, rgb(240 92 168 / 0.96), rgb(176 110 255 / 0.92)),
+    linear-gradient(135deg, #ffd2e8, #f0ddff);
+  box-shadow: 0 10px 30px rgb(208 89 160 / 0.22);
+}
+
+.md-tabs {
+  background: linear-gradient(90deg, rgb(255 126 186 / 0.9), rgb(176 110 255 / 0.9));
+}
+
+.md-main {
+  background:
+    radial-gradient(circle at top right, rgb(180 108 255 / 0.15), transparent 30%),
+    radial-gradient(circle at top left, rgb(255 114 182 / 0.16), transparent 28%),
+    linear-gradient(180deg, #fffafd 0%, #fcf7ff 100%);
+}
+
+.md-content__inner {
+  background: rgb(255 255 255 / 0.76);
+  border: 1px solid rgb(255 159 205 / 0.22);
+  border-radius: 24px;
+  box-shadow: 0 18px 45px rgb(143 79 226 / 0.1);
+  padding: 1.2rem 1.4rem;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  color: var(--kayori-ink);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.md-typeset h1 {
+  color: #c93d84;
+}
+
+.md-typeset a:hover {
+  color: var(--kayori-pink);
+}
+
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgb(153 104 219 / 0.1);
+}
+
+.md-typeset code {
+  border-radius: 10px;
+}
+
+.md-typeset pre > code {
+  border-radius: 16px;
+}
+
+.md-nav__link--active,
+.md-nav__link:focus,
+.md-nav__link:hover {
+  color: var(--kayori-pink);
+}
+
+.md-typeset .md-button {
+  border-radius: 999px;
+}

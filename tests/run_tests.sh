@@ -14,8 +14,9 @@ elif command -v python >/dev/null 2>&1 && python -m ruff --version >/dev/null 2>
 elif command -v uv >/dev/null 2>&1; then
     ruff_cmd=(uv run ruff)
 else
-    echo "Ruff is not available. Install it in your venv/pip environment or use uv." >&2
+    echo "Ruff is not available." >&2
     exit 1
 fi
 
-"${ruff_cmd[@]}" check src/ examples/ tests/ "$@"
+"${ruff_cmd[@]}" check src/ examples/ tests/
+"${ruff_cmd[@]}" format --check src/ examples/ tests/
