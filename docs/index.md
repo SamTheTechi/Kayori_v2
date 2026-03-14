@@ -4,12 +4,14 @@ Welcome to the Kayori v2 documentation!
 
 ## What is Kayori v2?
 
-Kayori v2 is an async, adapter-based AI companion built around LangGraph. It provides a modular runtime for AI agents with:
+Kayori v2 is an intelligent conversational AI agent that connects to Discord, Telegram, and webhooks. It provides:
 
-- **Platform Adapters**: Discord, Telegram, Console, and Webhook support
-- **Message Bus**: Decoupled message handling with in-memory or Redis backends
-- **Agent Orchestration**: LangGraph ReAct agent with tool integration
-- **Flexible Output Routing**: Direct or multi-platform message delivery
+- **Natural Conversations** - ReAct-based reasoning with context-aware responses
+- **Tool Execution** - Weather lookup, Spotify control, reminders, web search, and MCP tools
+- **Emotional Intelligence** - Mood analysis across 28 emotions adapting to user sentiment
+- **Memory Systems** - Conversation history + long-term episodic memory (Pinecone/Neo4j)
+- **Proactive Behavior** - Scheduler-driven curiosity, reminders, and mood-triggered actions
+- **Audio Support** - Speech-to-text (Whisper) and text-to-speech (EdgeTTS)
 
 ## Quick Start
 
@@ -19,7 +21,7 @@ git clone https://github.com/yourusername/kayori_v2.git
 cd kayori_v2
 
 # Install dependencies
-uv sync --dev
+uv sync
 
 # Configure environment
 cp .env.example .env
@@ -32,7 +34,13 @@ python examples/main.py
 ## Documentation Sections
 
 - [Getting Started](getting-started.md) - Setup, environment, and running locally
-- [Architecture](architecture.md) - Runtime flow, adapters, agent, and output routing
+- [Architecture](architecture.md) - System design, components, and message flow
+
+## Architecture Overview
+
+![Architecture Flow](../flow.png)
+
+**Message Flow:** `Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response`
 
 ## Getting Help
 
