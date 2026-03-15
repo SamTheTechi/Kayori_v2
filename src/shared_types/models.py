@@ -28,7 +28,9 @@ class MessageSource(StrEnum):
     TELEGRAM = "telegram"
     CONSOLE = "console"
     WEBHOOK = "webhook"
+
     REMINDER = "reminder"
+    SCHEDULER = "scheduler"
     INTERNAL = "internal"
 
 
@@ -36,10 +38,11 @@ class MessageSource(StrEnum):
 class MoodState:
     Affection: float = MOOD_NEUTRAL
     Amused: float = MOOD_NEUTRAL
-    Confidence: float = MOOD_NEUTRAL
     Frustrated: float = MOOD_NEUTRAL
     Concerned: float = MOOD_NEUTRAL
     Curious: float = MOOD_NEUTRAL
+
+    Confidence: float = MOOD_NEUTRAL
     Trust: float = MOOD_NEUTRAL
     Calmness: float = MOOD_NEUTRAL
 
@@ -57,7 +60,8 @@ class MoodState:
 
     @classmethod
     def from_dict(cls, values: dict[str, Any]) -> MoodState:
-        payload = {key: float(values.get(key, MOOD_NEUTRAL)) for key in EMOTIONS}
+        payload = {key: float(values.get(key, MOOD_NEUTRAL))
+                   for key in EMOTIONS}
         return cls(**payload)
 
     def clamp(self) -> MoodState:
@@ -149,7 +153,8 @@ class MessageEnvelope:
     attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(UTC).isoformat())
 
     def thread_id(self, fallback_user_id: str | None = None) -> str:
         if self.channel_id:
@@ -186,7 +191,8 @@ class MessageEnvelope:
             attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
-            created_at=str(data.get("created_at") or datetime.now(UTC).isoformat()),
+            created_at=str(data.get("created_at")
+                           or datetime.now(UTC).isoformat()),
         )
 
 
@@ -199,7 +205,8 @@ class OutboundMessage:
     message_id: str | None = None
     attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(UTC).isoformat())
     reply_to_message_id: str | None = None
     mention_author: bool = False
 
@@ -227,7 +234,8 @@ class OutboundMessage:
             message_id=_maybe_str(data.get("message_id")),
             attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
-            created_at=str(data.get("created_at") or datetime.now(UTC).isoformat()),
+            created_at=str(data.get("created_at")
+                           or datetime.now(UTC).isoformat()),
             reply_to_message_id=_maybe_str(data.get("reply_to_message_id")),
             mention_author=bool(data.get("mention_author", False)),
         )

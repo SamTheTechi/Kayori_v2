@@ -4,7 +4,7 @@ from core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from core.mood_engine import MoodEngine
 from core.orchestrator import AgentOrchestrator
 from core.outputsink import OutputSink
-from core.scheduler import TaskScheduler
+from core.scheduler import AgentScheduler, TaskScheduler
 
 __all__ = [
     "AgentOrchestrator",
@@ -12,5 +12,6 @@ __all__ = [
     "MoodEngine",
     "CircuitBreaker",
     "CircuitOpenError",
+    "AgentScheduler",
     "TaskScheduler",
 ]

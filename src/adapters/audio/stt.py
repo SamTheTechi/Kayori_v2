@@ -78,7 +78,8 @@ class WhisperSttAdapter:
             text=text,
             language=_optional_str(payload.get("language")),
             duration_seconds=_optional_float(
-                payload.get("duration", payload.get("x_groq", {}).get("duration"))
+                payload.get("duration", payload.get(
+                    "x_groq", {}).get("duration"))
             ),
             raw_response=payload,
         )

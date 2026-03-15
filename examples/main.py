@@ -1,42 +1,50 @@
 import asyncio
 import os
+import time
+from datetime import datetime
 
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
 
-from adapters.audio import EdgeTtsAdapter, WhisperSttAdapter
-from adapters.bus.in_memory import InMemoryMessageBus
-from adapters.input.console_input import ConsoleInputGateway
-from adapters.input.discord_input import DiscordInputAdapter
-from adapters.input.telegram_input import TelegramInputAdapter
-from adapters.input.webhook_input import WebhookInputAdapter
-from adapters.output.console_output import ConsoleOutputAdapter
-from adapters.output.discord_output import DiscordOutputAdapter
-from adapters.output.telegram_output import TelegramOutputAdapter
-from adapters.output.webhook_output import WebhookOutputAdapter
-from adapters.runtime import DiscordRuntime, TelegramRuntime, WebhookRuntime
-from adapters.safety.audit_logger import JsonlAuditLogger
-from adapters.state.in_memory import InMemoryStateStore
+from adapters import (
+    ConsoleInputGateway,
+    ConsoleOutputAdapter,
+    DiscordInputAdapter,
+    DiscordOutputAdapter,
+    DiscordRuntime,
+    EdgeTtsAdapter,
+    InMemoryMessageBus,
+    InMemoryStateStore,
+    JsonlAuditLogger,
+    TelegramInputAdapter,
+    TelegramOutputAdapter,
+    TelegramRuntime,
+    WebhookInputAdapter,
+    WebhookOutputAdapter,
+    WebhookRuntime,
+    WhisperSttAdapter,
+)
 from agent import ReactAgentService
-from core import AgentOrchestrator, OutputSink
+from core import AgentOrchestrator, AgentScheduler, OutputSink
 from logger import get_logger
-from shared_types.protocol import InputAdapter, OutputAdapter
-from tools import ReminderTool, SpotifyTool, WeatherTool
+from shared_types import InputAdapter, OutputAdapter, Trigger, TriggerType
+from tools import CalendarTools, GmailTools, ReminderTool, SpotifyTool, WeatherTool
 
 logger = get_logger("examples.main")
 
 
 async def _main() -> None:
     load_dotenv()
+
+    # Demo transport selection.
     enabled_inputs = ["discord", "webhook"]
     enabled_outputs = ["discord", "webhook"]
 
+    # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_output_user_id = os.getenv("DISCORD_USER_ID", "")
-
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-
     groq_api_key = str(os.getenv("API_KEY", "")).strip()
 
     webhook_bearer_token = "123"
@@ -55,24 +63,20 @@ async def _main() -> None:
     telegram_runtime = TelegramRuntime(token=telegram_token)
     webhook_runtime = WebhookRuntime(
         host="0.0.0.0",
-        port=80,
+        port=8080,
         bearer_token=webhook_bearer_token,
     )
 
     bus = InMemoryMessageBus()
     state = InMemoryStateStore()
-    webhook_tts = EdgeTtsAdapter(
-        api_key=tts_api_key,
-        base_url=tts_base_url,
-    )
+    webhook_tts = EdgeTtsAdapter(api_key=tts_api_key, base_url=tts_base_url)
 
+    # Output adapters.
     outputs: list[OutputAdapter] = []
     for name in enabled_outputs:
         if name == "console":
             outputs.append(ConsoleOutputAdapter())
         elif name == "discord":
-            if discord_runtime is None:
-                raise RuntimeError("Discord output enabled without runtime.")
             outputs.append(
                 DiscordOutputAdapter(
                     runtime=discord_runtime,
@@ -81,8 +85,6 @@ async def _main() -> None:
                 )
             )
         elif name == "telegram":
-            if telegram_runtime is None:
-                raise RuntimeError("Telegram output enabled without runtime.")
             outputs.append(
                 TelegramOutputAdapter(
                     runtime=telegram_runtime,
@@ -104,18 +106,18 @@ async def _main() -> None:
 
     output_dispatcher = OutputSink(outputs=outputs, mode="direct")
 
+    # Agent tools.
     tools = [
         WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
-        ReminderTool(
-            output=output_dispatcher,
-        ),
+        ReminderTool(output=output_dispatcher),
         SpotifyTool(),
         TavilySearch(max_results=3, topic="general"),
     ]
+    tools.extend(CalendarTools())
+    tools.extend(GmailTools())
 
-    audit_path = os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl")
     audit_logger = JsonlAuditLogger(
-        path=audit_path,
+        path=os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl"),
         enabled=True,
     )
 
@@ -126,28 +128,33 @@ async def _main() -> None:
     )
 
     orchestrator = AgentOrchestrator(
-        bus=bus, state_store=state, agent=agent, output=output_dispatcher
+        bus=bus,
+        state_store=state,
+        agent=agent,
+        output=output_dispatcher,
+    )
+    scheduler = AgentScheduler.with_memory(
+        bus=bus,
+        state_store=state
     )
 
+    # Input adapters.
     inputs: list[InputAdapter] = []
     for name in enabled_inputs:
         if name == "console":
             inputs.append(ConsoleInputGateway(bus=bus))
         elif name == "discord":
-            if discord_runtime is None:
-                raise RuntimeError("Discord input enabled without runtime.")
-            inputs.append(DiscordInputAdapter(runtime=discord_runtime, bus=bus))
+            inputs.append(DiscordInputAdapter(
+                runtime=discord_runtime, bus=bus))
         elif name == "telegram":
-            if telegram_runtime is None:
-                raise RuntimeError("Telegram input enabled without runtime.")
             inputs.append(
                 TelegramInputAdapter(
-                    runtime=telegram_runtime, bus=bus, allowed_chat_ids=None
+                    runtime=telegram_runtime,
+                    bus=bus,
+                    allowed_chat_ids=None,
                 )
             )
         elif name == "webhook":
-            if webhook_runtime is None:
-                raise RuntimeError("Webhook input enabled without runtime.")
             inputs.append(
                 WebhookInputAdapter(
                     runtime=webhook_runtime,
@@ -159,21 +166,74 @@ async def _main() -> None:
     if not inputs:
         raise RuntimeError("At least one input adapter must be enabled.")
 
-    orchestrator_task = asyncio.create_task(orchestrator.run(), name="orchestrator")
-    input_tasks: list[asyncio.Task[None]] = []
-
     for adapter in inputs:
         if isinstance(adapter, WebhookInputAdapter):
             adapter.register_routes()
 
+    orchestrator_task = asyncio.create_task(
+        orchestrator.run(), name="orchestrator")
+    input_tasks: list[asyncio.Task[None]] = []
+
     await output_dispatcher.start()
-    if webhook_runtime is not None:
-        await webhook_runtime.start()
+    await webhook_runtime.start()
+    await scheduler.start()
 
     try:
+        now = time.time()
+        local_now = datetime.now().astimezone()
+        second_of_day = (
+            local_now.hour * 3600 + local_now.minute * 60 + local_now.second
+        )
+
+        # One trigger per scheduler mode for quick manual testing.
+        demo_triggers = [
+            Trigger(
+                trigger_type=TriggerType.PRECISE,
+                fire_at=now + 5,
+                payload={
+                    "message": "Scheduler demo ping.",
+                    "metadata": {"kind": "scheduler_demo_precise"},
+                },
+            ),
+            Trigger(
+                trigger_type=TriggerType.FUZZY,
+                window_start_ts=now + 7,
+                window_end_ts=now + 12,
+                payload={
+                    "message": "Fuzzy demo ping.",
+                    "metadata": {"kind": "scheduler_demo_fuzzy"},
+                },
+            ),
+            Trigger(
+                trigger_type=TriggerType.MOOD,
+                mood_key="Calmness",
+                mood_threshold=0.4,
+                mood_direction="gte",
+                check_interval_sec=3,
+                payload={
+                    "message": "Mood demo ping.",
+                    "metadata": {"kind": "scheduler_demo_mood"},
+                },
+            ),
+            Trigger(
+                trigger_type=TriggerType.CURIOSITY,
+                allowed_window_start_sec=second_of_day + 9,
+                allowed_window_end_sec=second_of_day + 15,
+                target_slots_per_day=1,
+                payload={
+                    "message": "Curiosity demo ping.",
+                    "metadata": {"kind": "scheduler_demo_curiosity"},
+                },
+            ),
+        ]
+
+        for trigger in demo_triggers:
+            await scheduler.push(trigger)
+
         for adapter in inputs:
             input_tasks.append(
-                asyncio.create_task(adapter.start(), name=f"input-{adapter.name}")
+                asyncio.create_task(
+                    adapter.start(), name=f"input-{adapter.name}")
             )
 
         await asyncio.gather(*input_tasks)
@@ -195,10 +255,8 @@ async def _main() -> None:
 
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
-
-        if webhook_runtime is not None:
-            await webhook_runtime.stop()
-
+        await scheduler.stop()
+        await webhook_runtime.stop()
         await output_dispatcher.stop()
 
 

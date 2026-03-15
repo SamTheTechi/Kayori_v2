@@ -33,11 +33,13 @@ class WebhookRuntime:
     name: str = "webhook-runtime"
 
     _app: FastAPI = field(init=False, repr=False)
-    _routes: list[WebhookRoute] = field(default_factory=list, init=False, repr=False)
+    _routes: list[WebhookRoute] = field(
+        default_factory=list, init=False, repr=False)
     _route_keys: set[tuple[str, tuple[str, ...]]] = field(
         default_factory=set, init=False, repr=False
     )
-    _server: uvicorn.Server | None = field(default=None, init=False, repr=False)
+    _server: uvicorn.Server | None = field(
+        default=None, init=False, repr=False)
     _server_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False
     )
@@ -61,9 +63,11 @@ class WebhookRuntime:
 
         key = (route.path, methods)
         if key in self._route_keys:
-            raise ValueError(f"Duplicate webhook route: {route.path} {methods}")
+            raise ValueError(f"Duplicate webhook route: {
+                             route.path} {methods}")
         if self._started:
-            raise RuntimeError("Cannot register routes after webhook runtime start.")
+            raise RuntimeError(
+                "Cannot register routes after webhook runtime start.")
 
         async def wrapped_endpoint(request: Request) -> Any:
             if route.require_bearer_auth:
@@ -194,7 +198,7 @@ class WebhookRuntime:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing bearer token.",
             )
-        provided = raw[len(prefix) :].strip()
+        provided = raw[len(prefix):].strip()
         if provided != expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

@@ -8,7 +8,12 @@ from shared_types.models import (
     MoodState,
     OutboundMessage,
 )
-from shared_types.types import ScheduledTask, ToolAuditEvent
+from shared_types.types import (
+    ScheduledTask,
+    SchedulerBackend,
+    ToolAuditEvent,
+    Trigger,
+)
 
 
 @runtime_checkable
@@ -58,57 +63,6 @@ class StateStore(Protocol):
 # class MemoryConsolidator(Protocol):
 #     async def consolidate(self, *, episode_limit: int) -> None:
 #         ...
-#
-#
-# @runtime_checkable
-# class GoalTaskBrain(Protocol):
-#     async def due_tasks(self, *, within_minutes: int) -> list[GoalTask]:
-#         ...
-#
-#     async def mark_notified(self, task_id: str) -> None:
-#         ...
-#
-#     async def list_goals(self, *, status: str, limit: int = 5) -> list[Goal]:
-#         ...
-#
-#     async def next_actions(self, *, limit: int = 5) -> list[GoalTask]:
-#         ...
-
-#
-# @runtime_checkable
-# class CompanionStateStore(Protocol):
-#     async def get_state(self) -> CompanionState:
-#         ...
-#
-#     async def set_state(self, state: CompanionState) -> None:
-#         ...
-#
-#
-# @runtime_checkable
-# class ProactiveMessagingPolicy(Protocol):
-#     def decide(
-#         self,
-#         *,
-#         kind: str,
-#         base_prompt: str,
-#         state: CompanionState,
-#         now_iso: str,
-#         critical: bool = False,
-#     ) -> ProactiveDecision:
-#         ...
-#
-#
-# @runtime_checkable
-# class ProactiveKindStrategy(Protocol):
-#     def next_kind(
-#         self,
-#         *,
-#         state: CompanionState,
-#         now_iso: str,
-#     ) -> ProactiveKindPlan | None:
-#         ...
-#
-
 
 @runtime_checkable
 class ToolAuditLogger(Protocol):
@@ -174,6 +128,11 @@ class SchedulerStore(Protocol):
     async def get(self, task_id: str) -> ScheduledTask | None: ...
 
 
+@runtime_checkable
+class TriggerSchedulerBackend(SchedulerBackend, Protocol):
+    async def push(self, trigger: Trigger) -> None: ...
+
+
 __all__ = [
     # "CompanionStateStore",
     # "GoalTaskBrain",
@@ -188,4 +147,5 @@ __all__ = [
     "SchedulerStore",
     "StateStore",
     "ToolAuditLogger",
+    "TriggerSchedulerBackend",
 ]

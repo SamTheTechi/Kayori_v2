@@ -19,6 +19,7 @@ from shared_types.protocol import (
     SchedulerStore,
     StateStore,
     ToolAuditLogger,
+    TriggerSchedulerBackend,
 )
 from shared_types.tool_schemas import (
     ReminderToolArgs,
@@ -28,9 +29,15 @@ from shared_types.tool_schemas import (
 )
 from shared_types.types import (
     AgentGraphState,
+    FiredTrigger,
+    MissedPolicy,
+    MoodDirection,
     OutputSinkMode,
+    SchedulerBackend,
     ScheduledTask,
     ToolAuditEvent,
+    Trigger,
+    TriggerType,
 )
 
 __all__ = [
@@ -52,8 +59,15 @@ __all__ = [
     "EpisodicMemoryStore",
     "GraphMemoryStore",
     "SchedulerStore",
+    "TriggerSchedulerBackend",
     # Types
     "AgentGraphState",
+    "Trigger",
+    "FiredTrigger",
+    "TriggerType",
+    "MissedPolicy",
+    "MoodDirection",
+    "SchedulerBackend",
     "ToolAuditEvent",
     "ScheduledTask",
     "OutputSinkMode",

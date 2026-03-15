@@ -130,7 +130,8 @@ class MoodEngine:
             value = base + change
 
             for conflict in conflicts.get(tone, []):
-                conflict_distance = float(getattr(next_state, conflict)) - MOOD_NEUTRAL
+                conflict_distance = float(
+                    getattr(next_state, conflict)) - MOOD_NEUTRAL
                 value -= conflict_distance * self.conflict_multiplier
 
             for reinforce in reinforces.get(tone, []):
@@ -179,7 +180,8 @@ class MoodEngine:
             self.slow_spike_scale if tone in SLOW_EMOTIONS else self.fast_spike_scale
         )
         value = float(getattr(next_state, tone))
-        value += random.uniform(low, high) * spike_scale * random.choice([-1.0, 1.0])
+        value += random.uniform(low, high) * spike_scale * \
+            random.choice([-1.0, 1.0])
         setattr(next_state, tone, value)
         return next_state.clamp()
 

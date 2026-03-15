@@ -51,11 +51,14 @@ class CircuitBreaker:
     recovery_timeout_seconds: float = 30.0
     half_open_max_calls: int = 1
 
-    _state: CircuitState = field(default=CircuitState.CLOSED, init=False, repr=False)
+    _state: CircuitState = field(
+        default=CircuitState.CLOSED, init=False, repr=False)
     _failure_count: int = field(default=0, init=False, repr=False)
     _success_count: int = field(default=0, init=False, repr=False)
-    _last_failure_time: float | None = field(default=None, init=False, repr=False)
-    _last_state_change: float = field(default_factory=time.time, init=False, repr=False)
+    _last_failure_time: float | None = field(
+        default=None, init=False, repr=False)
+    _last_state_change: float = field(
+        default_factory=time.time, init=False, repr=False)
     _half_open_calls: int = field(default=0, init=False, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
@@ -103,7 +106,8 @@ class CircuitBreaker:
                 if fallback is not None:
                     return fallback
                 retry_after = self._retry_after_seconds()
-                raise CircuitOpenError(self.name, retry_after_seconds=retry_after)
+                raise CircuitOpenError(
+                    self.name, retry_after_seconds=retry_after)
 
             if self._state == CircuitState.HALF_OPEN:
                 self._half_open_calls += 1
@@ -182,7 +186,8 @@ class CircuitBreaker:
             self._success_count = 0
 
         print(
-            f"[circuit:{self.name}] state change: {old_state.value} → {new_state.value}"
+            f"[circuit:{self.name}] state change: {
+                old_state.value} → {new_state.value}"
         )
 
     def reset(self) -> None:
