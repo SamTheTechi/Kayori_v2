@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
+from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
 
 EMOTIONS = (
     "Affection",
@@ -32,6 +33,36 @@ class MessageSource(StrEnum):
     REMINDER = "reminder"
     SCHEDULER = "scheduler"
     INTERNAL = "internal"
+
+
+@dataclass(slots=True)
+class MessagesHistory:
+    _messages: list[BaseMessage] = field(default_factory=list)
+
+    def append(self, msgs: list[BaseMessage]) -> None:
+        self._messages.extend(msgs)
+
+    def replace(self, msgs: list[BaseMessage]) -> None:
+        """Used after compression — swap trimmed window back in."""
+        self._messages = list(msgs)
+
+    def get_window(self, n: int) -> list[BaseMessage]:
+        return self._messages[-n:]
+
+    def all(self) -> list[BaseMessage]:
+        return list(self._messages)
+
+    def __len__(self) -> int:
+        return len(self._messages)
+
+    def as_dict(self) -> dict:
+        return {"messages": messages_to_dict(self._messages)}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> MessagesHistory:
+        obj = cls()
+        obj._messages = messages_from_dict(data.get("messages", []))
+        return obj
 
 
 @dataclass(slots=True)
@@ -71,75 +102,75 @@ class MoodState:
         return self
 
 
-@dataclass(slots=True)
-class LocationState:
-    latitude: float = 0.0
-    longitude: float = 0.0
-    timestamp: float = 0.0
+# @dataclass(slots=True)
+# class LocationState:
+#     latitude: float = 0.0
+#     longitude: float = 0.0
+#     timestamp: float = 0.0
+#
+#     def as_dict(self) -> dict[str, float]:
+#         return {
+#             "latitude": self.latitude,
+#             "longitude": self.longitude,
+#             "timestamp": self.timestamp,
+#         }
+#
+#     @classmethod
+#     def from_dict(cls, values: dict[str, Any]) -> LocationState:
+#         return cls(
+#             latitude=float(values.get("latitude", 0.0)),
+#             longitude=float(values.get("longitude", 0.0)),
+#             timestamp=float(values.get("timestamp", 0.0)),
+#         )
 
-    def as_dict(self) -> dict[str, float]:
-        return {
-            "latitude": self.latitude,
-            "longitude": self.longitude,
-            "timestamp": self.timestamp,
-        }
 
-    @classmethod
-    def from_dict(cls, values: dict[str, Any]) -> LocationState:
-        return cls(
-            latitude=float(values.get("latitude", 0.0)),
-            longitude=float(values.get("longitude", 0.0)),
-            timestamp=float(values.get("timestamp", 0.0)),
-        )
-
-
-@dataclass(slots=True)
-class MessageAttachment:
-    kind: str = "image"
-    url: str = ""
-    mime_type: str | None = None
-    filename: str | None = None
-    size_bytes: int | None = None
-    width: int | None = None
-    height: int | None = None
-    duration_seconds: float | None = None
-    language: str | None = None
-    transcript: str | None = None
-    ocr_text: str | None = None
-    description: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "kind": self.kind,
-            "url": self.url,
-            "mime_type": self.mime_type,
-            "filename": self.filename,
-            "size_bytes": self.size_bytes,
-            "width": self.width,
-            "height": self.height,
-            "duration_seconds": self.duration_seconds,
-            "language": self.language,
-            "transcript": self.transcript,
-            "ocr_text": self.ocr_text,
-            "description": self.description,
-        }
-
-    @classmethod
-    def from_dict(cls, values: dict[str, Any]) -> MessageAttachment:
-        return cls(
-            kind=str(values.get("kind", "image")),
-            url=str(values.get("url", "")).strip(),
-            mime_type=_maybe_str(values.get("mime_type")),
-            filename=_maybe_str(values.get("filename")),
-            size_bytes=_maybe_int(values.get("size_bytes")),
-            width=_maybe_int(values.get("width")),
-            height=_maybe_int(values.get("height")),
-            duration_seconds=_maybe_float(values.get("duration_seconds")),
-            language=_maybe_str(values.get("language")),
-            transcript=_maybe_str(values.get("transcript")),
-            ocr_text=_maybe_str(values.get("ocr_text")),
-            description=_maybe_str(values.get("description")),
-        )
+# @dataclass(slots=True)
+# class MessageAttachment:
+#     kind: str = "image"
+#     url: str = ""
+#     mime_type: str | None = None
+#     filename: str | None = None
+#     size_bytes: int | None = None
+#     width: int | None = None
+#     height: int | None = None
+#     duration_seconds: float | None = None
+#     language: str | None = None
+#     transcript: str | None = None
+#     ocr_text: str | None = None
+#     description: str | None = None
+#
+#     def to_dict(self) -> dict[str, Any]:
+#         return {
+#             "kind": self.kind,
+#             "url": self.url,
+#             "mime_type": self.mime_type,
+#             "filename": self.filename,
+#             "size_bytes": self.size_bytes,
+#             "width": self.width,
+#             "height": self.height,
+#             "duration_seconds": self.duration_seconds,
+#             "language": self.language,
+#             "transcript": self.transcript,
+#             "ocr_text": self.ocr_text,
+#             "description": self.description,
+#         }
+#
+#     @classmethod
+#     def from_dict(cls, values: dict[str, Any]) -> MessageAttachment:
+#         return cls(
+#             kind=str(values.get("kind", "image")),
+#             url=str(values.get("url", "")).strip(),
+#             mime_type=_maybe_str(values.get("mime_type")),
+#             filename=_maybe_str(values.get("filename")),
+#             size_bytes=_maybe_int(values.get("size_bytes")),
+#             width=_maybe_int(values.get("width")),
+#             height=_maybe_int(values.get("height")),
+#             duration_seconds=_maybe_float(values.get("duration_seconds")),
+#             language=_maybe_str(values.get("language")),
+#             transcript=_maybe_str(values.get("transcript")),
+#             ocr_text=_maybe_str(values.get("ocr_text")),
+#             description=_maybe_str(values.get("description")),
+#         )
 
 
 @dataclass(slots=True)
@@ -150,7 +181,7 @@ class MessageEnvelope:
     author_id: str | None = None
     message_id: str | None = None
     target_user_id: str | None = None
-    attachments: list[MessageAttachment] = field(default_factory=list)
+    # attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
     created_at: str = field(
@@ -174,7 +205,7 @@ class MessageEnvelope:
             "channel_id": self.channel_id,
             "author_id": self.author_id,
             "target_user_id": self.target_user_id,
-            "attachments": [attachment.to_dict() for attachment in self.attachments],
+            # "attachments": [attachment.to_dict() for attachment in self.attachments],
             "metadata": self.metadata,
             "id": self.id,
             "created_at": self.created_at,
@@ -188,7 +219,7 @@ class MessageEnvelope:
             channel_id=_maybe_str(data.get("channel_id")),
             author_id=_maybe_str(data.get("author_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
-            attachments=_attachments_from_any(data.get("attachments")),
+            # attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
             created_at=str(data.get("created_at")
@@ -203,7 +234,7 @@ class OutboundMessage:
     channel_id: str | None = None
     target_user_id: str | None = None
     message_id: str | None = None
-    attachments: list[MessageAttachment] = field(default_factory=list)
+    # attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat())
@@ -217,7 +248,7 @@ class OutboundMessage:
             "channel_id": self.channel_id,
             "target_user_id": self.target_user_id,
             "message_id": self.message_id,
-            "attachments": [attachment.to_dict() for attachment in self.attachments],
+            # "attachments": [attachment.to_dict() for attachment in self.attachments],
             "metadata": self.metadata,
             "created_at": self.created_at,
             "reply_to_message_id": self.reply_to_message_id,
@@ -232,7 +263,7 @@ class OutboundMessage:
             channel_id=_maybe_str(data.get("channel_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
             message_id=_maybe_str(data.get("message_id")),
-            attachments=_attachments_from_any(data.get("attachments")),
+            # attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             created_at=str(data.get("created_at")
                            or datetime.now(UTC).isoformat()),
@@ -275,17 +306,17 @@ def _maybe_float(value: Any) -> float | None:
         return None
 
 
-def _attachments_from_any(value: Any) -> list[MessageAttachment]:
-    if not value:
-        return []
-    if isinstance(value, list):
-        attachments: list[MessageAttachment] = []
-        for item in value:
-            if isinstance(item, MessageAttachment):
-                attachments.append(item)
-            elif isinstance(item, dict):
-                parsed = MessageAttachment.from_dict(item)
-                if parsed.url:
-                    attachments.append(parsed)
-        return attachments
-    return []
+# def _attachments_from_any(value: Any) -> list[MessageAttachment]:
+#     if not value:
+#         return []
+#     if isinstance(value, list):
+#         attachments: list[MessageAttachment] = []
+#         for item in value:
+#             if isinstance(item, MessageAttachment):
+#                 attachments.append(item)
+#             elif isinstance(item, dict):
+#                 parsed = MessageAttachment.from_dict(item)
+#                 if parsed.url:
+#                     attachments.append(parsed)
+#         return attachments
+#     return []

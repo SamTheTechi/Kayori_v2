@@ -146,7 +146,8 @@ class JsonlLogger:
         async with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(payload, ensure_ascii=True, sort_keys=True))
+                handle.write(json.dumps(
+                    payload, ensure_ascii=True, sort_keys=True))
                 handle.write("\n")
             self._trim_old_lines()
 
@@ -158,7 +159,7 @@ class JsonlLogger:
         if len(lines) <= self.max_lines:
             return
 
-        kept = lines[-self.max_lines :]
+        kept = lines[-self.max_lines:]
         self.path.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 

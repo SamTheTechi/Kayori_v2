@@ -13,12 +13,14 @@ from agent.nodes.finalize import build_finalize_node
 from agent.nodes.postprocess import build_postprocess_node
 from agent.nodes.prepare_context import build_prepare_context_node
 from shared_types.types import AgentGraphState
+from shared_types.protocol import StateStore
 
 
 def create_react_agent_graph(
     *,
     model: Any,
     tools: list[BaseTool],
+    state: StateStore,
     history_store: dict,
     max_history_messages: int,
     timeout_seconds: int = 60,
@@ -30,7 +32,8 @@ def create_react_agent_graph(
     graph.add_node("prepare_context", build_prepare_context_node())
     graph.add_node(
         "call_model",
-        build_call_model_node(model=bound_model, timeout_seconds=timeout_seconds),
+        build_call_model_node(
+            model=bound_model, timeout_seconds=timeout_seconds),
     )
     graph.add_node("postprocess", build_postprocess_node())
     graph.add_node(

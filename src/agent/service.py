@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 from langchain_groq import ChatGroq
 
 from agent.react_agent import create_react_agent_graph
 from logger import get_logger
-from shared_types.models import MessageEnvelope, MoodState
-from shared_types.protocol import ToolAuditLogger
-from shared_types.types import ToolAuditEvent
+from shared_types.models import MoodState
 
 logger = get_logger("agent.service")
 
@@ -23,11 +20,7 @@ class ReactAgentService:
     tools: list[BaseTool] = field(default_factory=list)
     max_history_messages: int = 16
     timeout_seconds: int = 60
-    audit_logger: ToolAuditLogger | None = None
 
-    _history: dict[str, list[BaseMessage]] = field(
-        default_factory=dict, init=False, repr=False
-    )
     _graph: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -35,7 +28,6 @@ class ReactAgentService:
         self._graph = create_react_agent_graph(
             model=self.model,
             tools=list(self.tools),
-            history_store=self._history,
             max_history_messages=self.max_history_messages,
             timeout_seconds=self.timeout_seconds,
         )
@@ -49,7 +41,6 @@ class ReactAgentService:
         tools: list[BaseTool] | None = None,
         max_history_messages: int = 16,
         timeout_seconds: int = 60,
-        audit_logger: ToolAuditLogger | None = None,
     ) -> ReactAgentService:
         from os import getenv
 
@@ -63,40 +54,23 @@ class ReactAgentService:
             tools=list(tools or []),
             max_history_messages=max_history_messages,
             timeout_seconds=timeout_seconds,
-            audit_logger=audit_logger,
         )
-
-    # def set_tools(self, tools: list[BaseTool]) -> None:
-    #     self.tools = list(tools)
-    #     self._graph = create_react_agent_graph(
-    #         model=self.model,
-    #         tools=list(self.tools),
-    #         history_store=self._history,
-    #         max_history_messages=self.max_history_messages,
-    #         timeout_seconds=self.timeout_seconds,
-    #     )
-    #
-    # def add_tools(self, tools: list[BaseTool]) -> None:
-    #     self.set_tools([*self.tools, *list(tools)])
 
     async def respond(
         self,
         *,
-        user_text: str,
+        message: str,
         thread_id: str,
         mood: MoodState | None = None,
-        envelope: MessageEnvelope | None = None,
     ) -> str:
-        text = (user_text or "").strip()
+        text = (message or "").strip()
         if not text:
             return ""
 
         state_input = {
-            "user_text": text,
+            "message": text,
             "thread_id": thread_id,
             "mood": mood,
-            "envelope": envelope,
-            "history": list(self._history.get(thread_id, [])),
         }
 
         try:
@@ -107,79 +81,12 @@ class ReactAgentService:
                 "Agent graph invocation failed.",
                 context={
                     "thread_id": thread_id,
-                    "source": str(getattr(envelope, "source", "") or "unknown"),
                 },
                 error=exc,
             )
             return "I hit a temporary issue contacting the model. Please try again."
 
-        await self._audit_tool_events(
-            result=result,
-            thread_id=thread_id,
-            envelope=envelope,
-        )
-
         reply_text = str(result.get("reply_text") or "").strip()
         if not reply_text:
             return "I couldn't produce a reply just now."
         return reply_text
-
-    async def _audit_tool_events(
-        self,
-        *,
-        result: dict[str, Any],
-        thread_id: str,
-        envelope: MessageEnvelope | None,
-    ) -> None:
-        audit_logger = self.audit_logger
-        if audit_logger is None:
-            return
-
-        all_messages = list(result.get("messages") or [])
-        if not all_messages:
-            return
-
-        messages = None
-        for idx in range(len(all_messages) - 1, -1, -1):
-            if isinstance(all_messages[idx], HumanMessage):
-                messages = all_messages[idx + 1 :]
-        if not messages:
-            return
-
-        source = str(getattr(envelope, "source", "") or "unknown")
-        now_iso = datetime.now(UTC).isoformat()
-        seen: set[str] = set()
-
-        for message in messages:
-            if not isinstance(message, AIMessage):
-                continue
-            for call in list(getattr(message, "tool_calls", None) or []):
-                tool_name = str(call.get("name") or "unknown_tool")
-                tool_input = call.get("args")
-                call_id = str(call.get("id") or "").strip()
-                dedupe_key = call_id or f"{tool_name}:{repr(tool_input)}"
-                if dedupe_key in seen:
-                    continue
-                seen.add(dedupe_key)
-
-                event: ToolAuditEvent = {
-                    "timestamp": now_iso,
-                    "event_type": "tool_call",
-                    "thread_id": thread_id,
-                    "source": source,
-                    "tool_name": tool_name,
-                    "tool_input": tool_input,
-                }
-                try:
-                    await audit_logger.log_tool_event(event)
-                except Exception as exc:
-                    await logger.exception(
-                        "tool_audit_log_failed",
-                        "Failed to persist tool audit event.",
-                        context={
-                            "thread_id": thread_id,
-                            "tool_name": tool_name,
-                            "source": source,
-                        },
-                        error=exc,
-                    )

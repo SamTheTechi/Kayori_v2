@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import discord
 
 from adapters.runtime.discord_runtime import DiscordMessageHandler, DiscordRuntime
-from shared_types.models import MessageAttachment, MessageEnvelope, MessageSource
+from shared_types.models import MessageEnvelope, MessageSource
 from shared_types.protocol import MessageBus
 
 
@@ -19,7 +19,8 @@ class DiscordInputAdapter:
     _stop_event: asyncio.Event = field(
         default_factory=asyncio.Event, init=False, repr=False
     )
-    _handler: DiscordMessageHandler | None = field(default=None, init=False, repr=False)
+    _handler: DiscordMessageHandler | None = field(
+        default=None, init=False, repr=False)
     _acquired: bool = field(default=False, init=False, repr=False)
 
     async def start(self) -> None:
@@ -49,9 +50,9 @@ class DiscordInputAdapter:
 
     async def _handle_message(self, message: discord.Message) -> None:
         content = (message.content or "").strip()
-        attachments = _extract_attachments(message)
-        if not content and not attachments:
-            return
+        # attachments = _extract_attachments(message)
+        # if not content and not attachments:
+        #     return
 
         envelope = MessageEnvelope(
             source=MessageSource.DISCORD,
@@ -68,53 +69,50 @@ class DiscordInputAdapter:
                 else str(message.channel.id)
             ),
             message_id=str(message.id),
-            attachments=attachments,
+            # attachments=attachments,
             metadata={
                 "author_display_name": message.author.display_name,
-                "attachment_count": len(attachments),
-                "attachment_kinds": sorted({item.kind for item in attachments}),
+                # "attachment_count": len(attachments),
+                # "attachment_kinds": sorted({item.kind for item in attachments}),
             },
         )
         await self.bus.publish(envelope)
 
 
-def _extract_attachments(message: discord.Message) -> list[MessageAttachment]:
-    results: list[MessageAttachment] = []
-    for attachment in message.attachments:
-        mime_type = (attachment.content_type or "").lower()
-        filename = (attachment.filename or "").lower()
-        kind = _resolve_kind(mime_type=mime_type, filename=filename)
+# def _extract_attachments(message: discord.Message) -> list[MessageAttachment]:
+#     results: list[MessageAttachment] = []
+#     for attachment in message.attachments:
+#         mime_type = (attachment.content_type or "").lower()
+#         filename = (attachment.filename or "").lower()
+#         kind = _resolve_kind(mime_type=mime_type, filename=filename)
+#
+#         results.append(
+#             MessageAttachment(
+#                 kind=kind,
+#                 url=str(attachment.url),
+#                 mime_type=attachment.content_type,
+#                 filename=attachment.filename,
+#                 size_bytes=getattr(attachment, "size", None),
+#                 width=getattr(attachment, "width", None),
+#                 height=getattr(attachment, "height", None),
+#                 duration_seconds=getattr(attachment, "duration", None),
+#             )
+#         )
+#
+#     return results
 
-        results.append(
-            MessageAttachment(
-                kind=kind,
-                url=str(attachment.url),
-                mime_type=attachment.content_type,
-                filename=attachment.filename,
-                size_bytes=getattr(attachment, "size", None),
-                width=getattr(attachment, "width", None),
-                height=getattr(attachment, "height", None),
-                duration_seconds=getattr(attachment, "duration", None),
-            )
-        )
-
-    return results
-
-
-def _resolve_kind(*, mime_type: str, filename: str) -> str:
-    if mime_type.startswith("image/") or filename.endswith(
-        (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic", ".heif")
-    ):
-        return "image"
-    if mime_type.startswith("audio/") or filename.endswith(
-        (".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac")
-    ):
-        return "audio"
-    if mime_type.startswith("video/") or filename.endswith(
-        (".mp4", ".mov", ".mkv", ".webm", ".avi")
-    ):
-        return "video"
-    return "document"
-
-
-DiscordGateway = DiscordInputAdapter
+#
+# def _resolve_kind(*, mime_type: str, filename: str) -> str:
+#     if mime_type.startswith("image/") or filename.endswith(
+#         (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic", ".heif")
+#     ):
+#         return "image"
+#     if mime_type.startswith("audio/") or filename.endswith(
+#         (".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac")
+#     ):
+#         return "audio"
+#     if mime_type.startswith("video/") or filename.endswith(
+#         (".mp4", ".mov", ".mkv", ".webm", ".avi")
+#     ):
+#         return "video"
+#     return "document"

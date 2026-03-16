@@ -55,10 +55,12 @@ class EpisodicMemoryStore:
 
         pinecone_api_key = (os.getenv("PINECONE_API_KEY") or "").strip()
         index_name = (
-            os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX") or ""
+            os.getenv("PINECONE_INDEX_NAME") or os.getenv(
+                "PINECONE_INDEX") or ""
         ).strip()
         host = (
-            os.getenv("PINECONE_INDEX_HOST") or os.getenv("PINECONE_HOST") or ""
+            os.getenv("PINECONE_INDEX_HOST") or os.getenv(
+                "PINECONE_HOST") or ""
         ).strip()
         namespace = (
             os.getenv("PINECONE_NAMESPACE") or "kayori-episodic"
@@ -86,7 +88,8 @@ class EpisodicMemoryStore:
             namespace=namespace,
         )
         max_episodes_raw = (os.getenv("EPISODIC_MAX_EPISODES") or "").strip()
-        max_episodes = cls._to_int(max_episodes_raw, 250) if max_episodes_raw else 250
+        max_episodes = cls._to_int(
+            max_episodes_raw, 250) if max_episodes_raw else 250
 
         return cls(
             vector_store=vector_store,
@@ -200,14 +203,15 @@ class EpisodicMemoryStore:
         ids: list[str] = []
         async with self.vector_store._async_index_context() as index:
             async for page in index.list(namespace=self.namespace):
-                ids.extend(str(item).strip() for item in page if str(item).strip())
+                ids.extend(str(item).strip()
+                           for item in page if str(item).strip())
 
             if len(ids) <= keep:
                 return 0
 
             records: list[dict[str, Any]] = []
             for start in range(0, len(ids), COMPACT_BATCH_SIZE):
-                batch = ids[start : start + COMPACT_BATCH_SIZE]
+                batch = ids[start: start + COMPACT_BATCH_SIZE]
                 fetched = await index.fetch(ids=batch, namespace=self.namespace)
                 vectors = getattr(fetched, "vectors", {}) or {}
                 for vector_id in batch:
@@ -271,7 +275,8 @@ class EpisodicMemoryStore:
 
         normalized_category = self._normalize_category(category)
         normalized_importance = max(1, min(5, self._to_int(importance, 3)))
-        normalized_confidence = self._clamp(self._to_float(confidence, 0.8), 0.0, 1.0)
+        normalized_confidence = self._clamp(
+            self._to_float(confidence, 0.8), 0.0, 1.0)
         return {
             "id": f"FM-{uuid4().hex[:10]}",
             "timestamp": datetime.now(UTC).isoformat(),
@@ -292,9 +297,11 @@ class EpisodicMemoryStore:
 
         raw_tags = metadata.get("tags", [])
         if isinstance(raw_tags, str):
-            tags = [part.strip() for part in raw_tags.split(",") if part.strip()]
+            tags = [part.strip()
+                    for part in raw_tags.split(",") if part.strip()]
         elif isinstance(raw_tags, (list, tuple, set)):
-            tags = [str(part).strip() for part in raw_tags if str(part).strip()]
+            tags = [str(part).strip()
+                    for part in raw_tags if str(part).strip()]
         else:
             tags = []
 

@@ -37,7 +37,8 @@ class TelegramOutputAdapter:
             print("[telegram-output] dropped message with no telegram route")
             return
 
-        chunks = _split_telegram_chunks(message.content, max_len=self.max_chunk_len)
+        chunks = _split_telegram_chunks(
+            message.content, max_len=self.max_chunk_len)
         if not chunks:
             await self._send_one(chat_id=chat_id, message=message)
             return
@@ -48,13 +49,14 @@ class TelegramOutputAdapter:
                 message,
                 content=chunk,
                 reply_to_message_id=message.reply_to_message_id if first else None,
-                attachments=message.attachments if first else [],
+                # attachments=message.attachments if first else [],
             )
             await self._send_one(chat_id=chat_id, message=chunk_message)
             first = False
 
     async def _send_one(self, *, chat_id: str, message: OutboundMessage) -> None:
-        text_content = _compose_text_with_media(message.content, message.attachments)
+        text_content = _compose_text_with_media(
+            message.content, message.attachments)
         payload: dict[str, object] = {
             "chat_id": chat_id,
             "text": text_content,
@@ -62,7 +64,8 @@ class TelegramOutputAdapter:
 
         if message.source == MessageSource.TELEGRAM and message.reply_to_message_id:
             try:
-                payload["reply_to_message_id"] = int(message.reply_to_message_id)
+                payload["reply_to_message_id"] = int(
+                    message.reply_to_message_id)
             except Exception:
                 pass
 

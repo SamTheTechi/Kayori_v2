@@ -15,7 +15,6 @@ from adapters import (
     EdgeTtsAdapter,
     InMemoryMessageBus,
     InMemoryStateStore,
-    JsonlAuditLogger,
     TelegramInputAdapter,
     TelegramOutputAdapter,
     TelegramRuntime,
@@ -25,10 +24,10 @@ from adapters import (
     WhisperSttAdapter,
 )
 from agent import ReactAgentService
-from core import AgentOrchestrator, AgentScheduler, OutputSink
+from core import AgentOrchestrator, OutputSink
 from logger import get_logger
-from shared_types import InputAdapter, OutputAdapter, Trigger, TriggerType
-from tools import CalendarTools, GmailTools, ReminderTool, SpotifyTool, WeatherTool
+from shared_types import InputAdapter, OutputAdapter
+from tools import CalendarTools, ReminderTool, SpotifyTool
 
 logger = get_logger("examples.main")
 
@@ -108,23 +107,17 @@ async def _main() -> None:
 
     # Agent tools.
     tools = [
-        WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
+        # WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
         ReminderTool(output=output_dispatcher),
         SpotifyTool(),
         TavilySearch(max_results=3, topic="general"),
     ]
     tools.extend(CalendarTools())
-    tools.extend(GmailTools())
-
-    audit_logger = JsonlAuditLogger(
-        path=os.getenv("TOOL_AUDIT_LOG_PATH", "logs/tool_audit.jsonl"),
-        enabled=True,
-    )
+    # tools.extend(GmailTools())
 
     agent = ReactAgentService.from_env(
         model_name="openai/gpt-oss-120b",
         tools=tools,
-        audit_logger=audit_logger,
     )
 
     orchestrator = AgentOrchestrator(
@@ -133,10 +126,11 @@ async def _main() -> None:
         agent=agent,
         output=output_dispatcher,
     )
-    scheduler = AgentScheduler.with_memory(
-        bus=bus,
-        state_store=state
-    )
+
+    # scheduler = AgentScheduler.with_memory(
+    #     bus=bus,
+    #     state_store=state
+    # )
 
     # Input adapters.
     inputs: list[InputAdapter] = []
@@ -171,64 +165,66 @@ async def _main() -> None:
             adapter.register_routes()
 
     orchestrator_task = asyncio.create_task(
-        orchestrator.run(), name="orchestrator")
+        orchestrator.run(),
+        name="orchestrator"
+    )
     input_tasks: list[asyncio.Task[None]] = []
 
     await output_dispatcher.start()
     await webhook_runtime.start()
-    await scheduler.start()
+    # await scheduler.start()
 
     try:
-        now = time.time()
-        local_now = datetime.now().astimezone()
-        second_of_day = (
-            local_now.hour * 3600 + local_now.minute * 60 + local_now.second
-        )
-
-        # One trigger per scheduler mode for quick manual testing.
-        demo_triggers = [
-            Trigger(
-                trigger_type=TriggerType.PRECISE,
-                fire_at=now + 5,
-                payload={
-                    "message": "Scheduler demo ping.",
-                    "metadata": {"kind": "scheduler_demo_precise"},
-                },
-            ),
-            Trigger(
-                trigger_type=TriggerType.FUZZY,
-                window_start_ts=now + 7,
-                window_end_ts=now + 12,
-                payload={
-                    "message": "Fuzzy demo ping.",
-                    "metadata": {"kind": "scheduler_demo_fuzzy"},
-                },
-            ),
-            Trigger(
-                trigger_type=TriggerType.MOOD,
-                mood_key="Calmness",
-                mood_threshold=0.4,
-                mood_direction="gte",
-                check_interval_sec=3,
-                payload={
-                    "message": "Mood demo ping.",
-                    "metadata": {"kind": "scheduler_demo_mood"},
-                },
-            ),
-            Trigger(
-                trigger_type=TriggerType.CURIOSITY,
-                allowed_window_start_sec=second_of_day + 9,
-                allowed_window_end_sec=second_of_day + 15,
-                target_slots_per_day=1,
-                payload={
-                    "message": "Curiosity demo ping.",
-                    "metadata": {"kind": "scheduler_demo_curiosity"},
-                },
-            ),
-        ]
-
-        for trigger in demo_triggers:
-            await scheduler.push(trigger)
+        # now = time.time()
+        # local_now = datetime.now().astimezone()
+        # second_of_day = (
+        #     local_now.hour * 3600 + local_now.minute * 60 + local_now.second
+        # )
+        #
+        # # One trigger per scheduler mode for quick manual testing.
+        # demo_triggers = [
+        #     Trigger(
+        #         trigger_type=TriggerType.PRECISE,
+        #         fire_at=now + 5,
+        #         payload={
+        #             "message": "Scheduler demo ping.",
+        #             "metadata": {"kind": "scheduler_demo_precise"},
+        #         },
+        #     ),
+        #     Trigger(
+        #         trigger_type=TriggerType.FUZZY,
+        #         window_start_ts=now + 7,
+        #         window_end_ts=now + 12,
+        #         payload={
+        #             "message": "Fuzzy demo ping.",
+        #             "metadata": {"kind": "scheduler_demo_fuzzy"},
+        #         },
+        #     ),
+        #     Trigger(
+        #         trigger_type=TriggerType.MOOD,
+        #         mood_key="Calmness",
+        #         mood_threshold=0.4,
+        #         mood_direction="gte",
+        #         check_interval_sec=3,
+        #         payload={
+        #             "message": "Mood demo ping.",
+        #             "metadata": {"kind": "scheduler_demo_mood"},
+        #         },
+        #     ),
+        #     Trigger(
+        #         trigger_type=TriggerType.CURIOSITY,
+        #         allowed_window_start_sec=second_of_day + 9,
+        #         allowed_window_end_sec=second_of_day + 15,
+        #         target_slots_per_day=1,
+        #         payload={
+        #             "message": "Curiosity demo ping.",
+        #             "metadata": {"kind": "scheduler_demo_curiosity"},
+        #         },
+        #     ),
+        # ]
+        #
+        # for trigger in demo_triggers:
+        #     await scheduler.push(trigger)
 
         for adapter in inputs:
             input_tasks.append(
@@ -255,7 +251,7 @@ async def _main() -> None:
 
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
-        await scheduler.stop()
+        # await scheduler.stop()
         await webhook_runtime.stop()
         await output_dispatcher.stop()
 

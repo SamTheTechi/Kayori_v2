@@ -40,7 +40,8 @@ class DiscordOutputAdapter:
             print("[discord-output] dropped message with no discord route")
             return
 
-        chunks = _split_discord_chunks(message.content, max_len=self.max_chunk_len)
+        chunks = _split_discord_chunks(
+            message.content, max_len=self.max_chunk_len)
         if not chunks:
             await self._send_one(message=message, route=route)
             return
@@ -52,7 +53,7 @@ class DiscordOutputAdapter:
                 content=chunk,
                 reply_to_message_id=message.reply_to_message_id if first else None,
                 mention_author=message.mention_author if first else False,
-                attachments=message.attachments if first else [],
+                # attachments=message.attachments if first else [],
             )
             await self._send_one(message=chunk_message, route=route)
             first = False
@@ -61,7 +62,8 @@ class DiscordOutputAdapter:
         self, *, message: OutboundMessage, route: tuple[str, str]
     ) -> None:
         mode, target_id = route
-        content = _compose_text_with_media(message.content, message.attachments)
+        content = _compose_text_with_media(
+            message.content, message.attachments)
         if not (content or "").strip():
             return
 

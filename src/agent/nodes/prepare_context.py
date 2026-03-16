@@ -12,15 +12,9 @@ from templates.chat_template import private_template
 
 def build_prepare_context_node():
     async def prepare_context_node(state: AgentGraphState) -> dict[str, Any]:
-        text = str(state.get("user_text") or "").strip()
+        text = str(state.get("content") or "").strip()
         if not text:
-            return {"reply_text": "", "messages": []}
-
-        history = list(state.get("history") or [])
-        messages: list[BaseMessage] = [*history, HumanMessage(content=text)]
-        mood_values = _mood_values(state.get("mood"))
-        current_time = datetime.now().astimezone().isoformat(timespec="seconds")
-
+            return {"reply_text": ""}
         try:
             formatted_messages = private_template.format_messages(
                 messages=messages,

@@ -3,32 +3,21 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Annotated, Any, Literal, Protocol, TypedDict, runtime_checkable
-
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable, Annotated
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-from shared_types.models import MessageEnvelope, MessageSource, MoodState
+
+from shared_types.models import MessageSource, MoodState
 
 
 class AgentGraphState(TypedDict, total=False):
     user_text: str
     thread_id: str
-    mood: MoodState | None
-    envelope: MessageEnvelope | None
-    history: list[BaseMessage]
     messages: Annotated[list[BaseMessage], add_messages]
+    mood: MoodState | None
     reply_text: str
     error_reason: str | None
-
-
-class ToolAuditEvent(TypedDict, total=False):
-    timestamp: str
-    event_type: Literal["tool_call", "tool_result", "tool_error"]
-    thread_id: str
-    source: str
-    tool_name: str
-    tool_input: Any
 
 
 SchedulerMode = Literal["exact", "window"]
@@ -124,10 +113,12 @@ class Trigger:
             trigger_id=str(data.get("trigger_id") or uuid.uuid4()),
             fire_at=_optional_float(data.get("fire_at")),
             repeat=bool(data.get("repeat", False)),
-            repeat_interval_sec=_optional_float(data.get("repeat_interval_sec")),
+            repeat_interval_sec=_optional_float(
+                data.get("repeat_interval_sec")),
             check_interval_sec=_optional_float(data.get("check_interval_sec")),
             missed_policy=MissedPolicy(
-                str(data.get("missed_policy") or MissedPolicy.SKIP_RESCHEDULE.value)
+                str(data.get("missed_policy")
+                    or MissedPolicy.SKIP_RESCHEDULE.value)
             ),
             window_start_ts=_optional_float(data.get("window_start_ts")),
             window_end_ts=_optional_float(data.get("window_end_ts")),
@@ -137,8 +128,10 @@ class Trigger:
             allowed_window_start_sec=_optional_float(
                 data.get("allowed_window_start_sec")
             ),
-            allowed_window_end_sec=_optional_float(data.get("allowed_window_end_sec")),
-            target_slots_per_day=_optional_int(data.get("target_slots_per_day")),
+            allowed_window_end_sec=_optional_float(
+                data.get("allowed_window_end_sec")),
+            target_slots_per_day=_optional_int(
+                data.get("target_slots_per_day")),
             min_spacing_sec=_optional_float(data.get("min_spacing_sec")),
             rule_metadata=dict(data.get("rule_metadata") or {}),
         )
@@ -206,7 +199,6 @@ __all__ = [
     "ScheduledTask",
     "SchedulerBackend",
     "SchedulerMode",
-    "ToolAuditEvent",
     "Trigger",
     "TriggerType",
 ]

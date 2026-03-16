@@ -37,18 +37,17 @@ class AgentOrchestrator:
                 )
 
     async def _handle_envelope(self, envelope: MessageEnvelope) -> None:
-        user_text = (envelope.content or "").strip()
-        if not user_text:
+        message = (envelope.content or "").strip()
+        if not message:
             return
 
         mood = await self.state_store.get_mood()
         thread_id = envelope.thread_id(fallback_user_id=envelope.author_id)
 
         reply_text = await self.agent.respond(
-            user_text=user_text,
+            message=message,
             thread_id=thread_id,
             mood=mood,
-            envelope=envelope,
         )
 
         content = (reply_text or "").strip()
@@ -56,7 +55,8 @@ class AgentOrchestrator:
             if (
                 envelope.source == MessageSource.WEBHOOK
                 and str(
-                    (envelope.metadata or {}).get("webhook_correlation_id") or ""
+                    (envelope.metadata or {}).get(
+                        "webhook_correlation_id") or ""
                 ).strip()
             ):
                 outbound = OutboundMessage(
@@ -99,7 +99,8 @@ class AgentOrchestrator:
                 "webhook_envelope_id": envelope.id,
             },
             reply_to_message_id=envelope.message_id,
-            mention_author=bool(envelope.channel_id and not envelope.target_user_id),
+            mention_author=bool(
+                envelope.channel_id and not envelope.target_user_id),
         )
 
         if outbound is None:

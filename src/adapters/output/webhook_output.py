@@ -21,7 +21,8 @@ class WebhookOutputAdapter:
     timeout_seconds: float = 10.0
     name: str = "webhook"
 
-    _client: httpx.AsyncClient | None = field(default=None, init=False, repr=False)
+    _client: httpx.AsyncClient | None = field(
+        default=None, init=False, repr=False)
 
     async def start(self) -> None:
         if self._client is not None:
@@ -52,7 +53,8 @@ class WebhookOutputAdapter:
 
         payload = message.to_dict()
         results = await asyncio.gather(
-            *(client.post(url, json=payload, headers=headers) for url in self.targets),
+            *(client.post(url, json=payload, headers=headers)
+              for url in self.targets),
             return_exceptions=True,
         )
         for url, result in zip(self.targets, results, strict=False):
@@ -61,13 +63,15 @@ class WebhookOutputAdapter:
                 continue
             if result.status_code >= 400:
                 print(
-                    f"[webhook-output] target {url} returned status {result.status_code}"
+                    f"[webhook-output] target {
+                        url} returned status {result.status_code}"
                 )
 
     async def _capture_runtime_response(self, message: OutboundMessage) -> None:
         runtime = self.runtime
         metadata = dict(message.metadata or {})
-        correlation_id = str(metadata.get("webhook_correlation_id") or "").strip()
+        correlation_id = str(metadata.get(
+            "webhook_correlation_id") or "").strip()
         if runtime is None or not correlation_id:
             return
 
@@ -101,12 +105,14 @@ class WebhookOutputAdapter:
 
         tts = self.tts
         if tts is None:
-            raise RuntimeError("Webhook audio response requested without TTS adapter.")
+            raise RuntimeError(
+                "Webhook audio response requested without TTS adapter.")
 
         synthesis = await tts.synthesize(
             text=payload["reply"],
             voice=_optional_text(metadata.get("tts_voice")),
-            response_format=_optional_text(metadata.get("tts_response_format")),
+            response_format=_optional_text(
+                metadata.get("tts_response_format")),
             speed=_optional_float(metadata.get("tts_speed")),
         )
         payload["audio_base64"] = base64.b64encode(synthesis.audio_bytes).decode(
