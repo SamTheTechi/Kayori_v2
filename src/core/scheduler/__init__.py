@@ -1,12 +1,13 @@
-from core.scheduler.backend_memory import InMemoryBackend
-from core.scheduler.scheduler import AgentScheduler, TaskScheduler
-from shared_types.types import (
+from src.core.scheduler.backend_memory import InMemoryBackend
+from src.core.scheduler.scheduler import AgentScheduler, TaskScheduler
+from src.shared_types.types import (
     FiredTrigger,
     MissedPolicy,
-    SchedulerBackend,
     Trigger,
     TriggerType,
 )
+from src.shared_types.protocol import SchedulerBackend
+
 
 __all__ = [
     "AgentScheduler",

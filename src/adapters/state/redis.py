@@ -1,62 +1,66 @@
 from __future__ import annotations
 
 import json
-import redis.asyncio as redis
+from redis.asyncio import Redis
 
 from langchain_core.messages import BaseMessage
-from shared_types.models import EMOTIONS, MOOD_NEUTRAL, MoodState, MessagesHistory
+from src.shared_types.models import EMOTIONS, MOOD_NEUTRAL, MoodState, MessagesHistory
 
-MOOD_KEY = "kayori:state:mood"
-HISTORY_KEY = "kayori:state:history"
+MOOD_KEY_PREFIX = "kayori:state:mood"
+HISTORY_KEY_PREFIX = "kayori:state:history"
 
 # LIVE_LOCATION_KEY = "kayori:state:live_location"
 # PINNED_LOCATION_KEY = "kayori:state:pinned_location"
 
 
 class RedisStateStore:
-    def __init__(self, redis_url: str) -> None:
-        self._client = redis.from_url(redis_url, decode_responses=True)
+    def __init__(self, redis_client: Redis) -> None:
+        self._client = redis_client
 
     # ------------------------------------------------------------------
     # Mood
     # ------------------------------------------------------------------
 
-    async def get_mood(self) -> MoodState:
-        data = await self._client.hgetall(MOOD_KEY)
+    async def get_mood(self, thread_id: str) -> MoodState:
+        key = _mood_key(thread_id)
+        data = await self._client.hgetall(key)
         if not data:
+            await self._client.hset(
+                key, mapping=dict.fromkeys(EMOTIONS, MOOD_NEUTRAL)
+            )
             return MoodState()
         return MoodState.from_dict(data)
 
-    async def set_mood(self, mood: MoodState) -> None:
+    async def set_mood(self, thread_id: str, mood: MoodState) -> None:
         payload = dict(mood.clamp().as_dict())
-        await self._client.hset(MOOD_KEY, mapping=payload)
+        await self._client.hset(_mood_key(thread_id), mapping=payload)
 
     # ------------------------------------------------------------------
     # History
     # ------------------------------------------------------------------
 
-    async def get_history(self) -> MessagesHistory:
-        raw = await self._client.get(HISTORY_KEY)
+    async def get_history(self, thread_id: str) -> MessagesHistory:
+        raw = await self._client.get(_history_key(thread_id))
         if not raw:
             return MessagesHistory()
         return MessagesHistory.from_dict(json.loads(raw))
 
-    async def append_messages(self, msgs: list[BaseMessage]) -> None:
-        history = await self.get_history()
+    async def append_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
+        history = await self.get_history(thread_id)
         history.append(msgs)
-        await self._client.set(HISTORY_KEY, json.dumps(history.as_dict()))
+        await self._client.set(_history_key(thread_id), json.dumps(history.as_dict()))
 
-    async def replace_messages(self, msgs: list[BaseMessage]) -> None:
-        history = await self.get_history()
+    async def replace_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
+        history = await self.get_history(thread_id)
         history.replace(msgs)
-        await self._client.set(HISTORY_KEY, json.dumps(history.as_dict()))
+        await self._client.set(_history_key(thread_id), json.dumps(history.as_dict()))
 
-    async def get_window(self, n: int) -> list[BaseMessage]:
-        history = await self.get_history()
+    async def get_window(self, thread_id: str, n: int) -> list[BaseMessage]:
+        history = await self.get_history(thread_id)
         return history.get_window(n)
 
-    async def history_len(self) -> int:
-        history = await self.get_history()
+    async def history_len(self, thread_id: str) -> int:
+        history = await self.get_history(thread_id)
         return len(history)
 
     # ------------------------------------------------------------------
@@ -85,14 +89,16 @@ class RedisStateStore:
     # Init
     # ------------------------------------------------------------------
 
-    async def init_defaults(self) -> None:
-        if not await self._client.exists(MOOD_KEY):
+    async def init_defaults(self, thread_id: str = "global") -> None:
+        mood_key = _mood_key(thread_id)
+        history_key = _history_key(thread_id)
+        if not await self._client.exists(mood_key):
             await self._client.hset(
-                MOOD_KEY, mapping=dict.fromkeys(EMOTIONS, MOOD_NEUTRAL)
+                mood_key, mapping=dict.fromkeys(EMOTIONS, MOOD_NEUTRAL)
             )
-        if not await self._client.exists(HISTORY_KEY):
+        if not await self._client.exists(history_key):
             await self._client.set(
-                HISTORY_KEY, json.dumps(MessagesHistory().as_dict())
+                history_key, json.dumps(MessagesHistory().as_dict())
             )
         # if not await self._client.exists(LIVE_LOCATION_KEY):
         #     await self._client.hset(
@@ -102,3 +108,16 @@ class RedisStateStore:
         #     await self._client.hset(
         #         PINNED_LOCATION_KEY, mapping=LocationState().as_dict()
         #     )
+
+
+def _thread_key(thread_id: str) -> str:
+    key = str(thread_id or "").strip()
+    return key or "global"
+
+
+def _mood_key(thread_id: str) -> str:
+    return f"{MOOD_KEY_PREFIX}:{_thread_key(thread_id)}"
+
+
+def _history_key(thread_id: str) -> str:
+    return f"{HISTORY_KEY_PREFIX}:{_thread_key(thread_id)}"

@@ -3,16 +3,17 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
-from logger import get_logger
-from shared_types.types import AgentGraphState
+from src.logger import get_logger
+from src.shared_types.types import AgentGraphState
 
 FALLBACK_TEXT = "I hit a temporary issue contacting the model. Please try again."
 logger = get_logger("agent.call_model")
 
 
-def build_call_model_node(model: Any, timeout_seconds: int = 60):
+def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):
     async def call_model_node(state: AgentGraphState) -> dict[str, Any]:
         messages = list(state.get("messages") or [])
         if not messages:

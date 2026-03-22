@@ -5,12 +5,12 @@ from uuid import uuid4
 
 import redis.asyncio as redis
 
-from shared_types.types import ScheduledTask
+from src.shared_types.types import ScheduledTask
 
 
 class RedisSchedulerStore:
-    def __init__(self, redis_url: str, key_prefix: str = "kayori:scheduler") -> None:
-        self._client = redis.from_url(redis_url, decode_responses=True)
+    def __init__(self, redis_client: redis, key_prefix: str = "kayori:scheduler") -> None:
+        self._client = redis_client
         self._due_key = f"{key_prefix}:due"
         self._tasks_key = f"{key_prefix}:tasks"
 

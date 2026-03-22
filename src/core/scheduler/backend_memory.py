@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import heapq
 
-from shared_types.types import Trigger
+from src.shared_types.types import Trigger
 
 
 class InMemoryBackend:
@@ -59,6 +59,3 @@ class InMemoryBackend:
 
     async def restore(self) -> list[Trigger]:
         return []
-
-    async def close(self) -> None:
-        pass

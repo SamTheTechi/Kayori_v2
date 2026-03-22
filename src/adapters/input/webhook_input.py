@@ -7,10 +7,10 @@ from typing import Any
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from adapters.audio import WhisperSttAdapter
-from adapters.runtime.webhook_runtime import WebhookRoute, WebhookRuntime
-from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocol import MessageBus
+from src.adapters.audio import WhisperSttAdapter
+from src.adapters.runtime.webhook_runtime import WebhookRoute, WebhookRuntime
+from src.shared_types.models import MessageEnvelope, MessageSource
+from src.shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

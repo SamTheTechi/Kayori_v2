@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from shared_types.models import MessageEnvelope
+from src.shared_types.models import MessageEnvelope
 
 
 class InMemoryMessageBus:

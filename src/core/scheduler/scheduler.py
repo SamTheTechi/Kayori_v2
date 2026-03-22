@@ -8,10 +8,14 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Coroutine
 
-from logger import get_logger
-from shared_types.models import EMOTIONS, MessageEnvelope, MessageSource
-from shared_types.protocol import MessageBus, StateStore
-from shared_types.types import FiredTrigger, MissedPolicy, SchedulerBackend, Trigger, TriggerType
+from redis.asyncio import Redis
+
+from src.logger import get_logger
+from src.shared_types.models import EMOTIONS, MessageEnvelope, MessageSource
+from src.shared_types.protocol import MessageBus, StateStore
+from src.shared_types.protocol import SchedulerBackend
+from src.shared_types.thread_identity import resolve_thread_id
+from src.shared_types.types import FiredTrigger, MissedPolicy, Trigger, TriggerType
 
 logger = get_logger("core.scheduler")
 
@@ -53,7 +57,7 @@ class AgentScheduler:
         tick_interval: float = 1.0,
         default_mood_check_interval: float = DEFAULT_MOOD_CHECK_INTERVAL,
     ) -> "AgentScheduler":
-        from core.scheduler.backend_memory import InMemoryBackend
+        from src.core.scheduler.backend_memory import InMemoryBackend
 
         return cls(
             InMemoryBackend(),
@@ -64,20 +68,18 @@ class AgentScheduler:
         )
 
     @classmethod
-    async def with_redis(
+    def with_redis(
         cls,
         *,
-        url: str = "redis://localhost:6379",
+        redis_client: Redis,
         bus: MessageBus | None = None,
         state_store: StateStore | None = None,
         tick_interval: float = 1.0,
         default_mood_check_interval: float = DEFAULT_MOOD_CHECK_INTERVAL,
-        acquire_leader: bool = True,
     ) -> "AgentScheduler":
-        from core.scheduler.backend_redis import RedisBackend
+        from src.core.scheduler.backend_redis import RedisBackend
 
-        backend = RedisBackend(url=url, acquire_leader=acquire_leader)
-        await backend.connect()
+        backend = RedisBackend(redis_client=redis_client)
         return cls(
             backend,
             bus=bus,
@@ -110,20 +112,25 @@ class AgentScheduler:
             if trigger.fire_at is None:
                 raise ValueError("precise triggers require fire_at")
             if trigger.repeat and trigger.repeat_interval_sec is None:
-                raise ValueError("repeating precise triggers require repeat_interval_sec")
+                raise ValueError(
+                    "repeating precise triggers require repeat_interval_sec")
         elif trigger.trigger_type == TriggerType.FUZZY:
             if trigger.window_start_ts is None or trigger.window_end_ts is None:
-                raise ValueError("fuzzy triggers require window_start_ts and window_end_ts")
+                raise ValueError(
+                    "fuzzy triggers require window_start_ts and window_end_ts")
             start = float(trigger.window_start_ts)
             end = float(trigger.window_end_ts)
             if end <= start:
-                raise ValueError("fuzzy trigger window_end_ts must be after window_start_ts")
+                raise ValueError(
+                    "fuzzy trigger window_end_ts must be after window_start_ts")
             if trigger.repeat and trigger.repeat_interval_sec is None:
-                raise ValueError("repeating fuzzy triggers require repeat_interval_sec")
+                raise ValueError(
+                    "repeating fuzzy triggers require repeat_interval_sec")
             if trigger.fire_at is None:
                 trigger.fire_at = random.uniform(start, end)
             elif not start <= trigger.fire_at <= end:
-                raise ValueError("fuzzy trigger fire_at must be inside the configured window")
+                raise ValueError(
+                    "fuzzy trigger fire_at must be inside the configured window")
         elif trigger.trigger_type == TriggerType.MOOD:
             if self._state_store is None:
                 raise ValueError("mood triggers require state_store")
@@ -132,7 +139,8 @@ class AgentScheduler:
             if trigger.mood_threshold is None:
                 raise ValueError("mood triggers require mood_threshold")
             if trigger.mood_direction not in {"gte", "lte"}:
-                raise ValueError("mood triggers require mood_direction to be 'gte' or 'lte'")
+                raise ValueError(
+                    "mood triggers require mood_direction to be 'gte' or 'lte'")
             if trigger.fire_at is None:
                 trigger.fire_at = now + check_interval
         else:
@@ -149,11 +157,14 @@ class AgentScheduler:
             slot_count = trigger.target_slots_per_day or DEFAULT_CURIOSITY_SLOTS
             min_spacing = float(trigger.min_spacing_sec or 0.0)
             if end_sec <= start_sec:
-                raise ValueError("curiosity allowed window end must be after start")
+                raise ValueError(
+                    "curiosity allowed window end must be after start")
             if slot_count <= 0:
-                raise ValueError("curiosity target_slots_per_day must be positive")
+                raise ValueError(
+                    "curiosity target_slots_per_day must be positive")
             if min_spacing > (end_sec - start_sec) / slot_count:
-                raise ValueError("curiosity min_spacing_sec is too large for the window")
+                raise ValueError(
+                    "curiosity min_spacing_sec is too large for the window")
             if trigger.fire_at is None:
                 search_from = now
                 while True:
@@ -167,7 +178,8 @@ class AgentScheduler:
                         sort_keys=True,
                         separators=(",", ":"),
                     )
-                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{payload}"
+                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{
+                        payload}"
                     seed = int.from_bytes(
                         hashlib.sha256(seed_input.encode()).digest()[:8],
                         "big",
@@ -176,8 +188,10 @@ class AgentScheduler:
                     slots = []
                     for index in range(slot_count):
                         center = window_start + bucket_size * (index + 0.5)
-                        slots.append(center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
-                    future_slots = [slot for slot in slots if slot > search_from]
+                        slots.append(
+                            center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
+                    future_slots = [
+                        slot for slot in slots if slot > search_from]
                     if future_slots:
                         trigger.fire_at = future_slots[0]
                         break
@@ -225,8 +239,10 @@ class AgentScheduler:
                 elif trigger.repeat and trigger.repeat_interval_sec is not None:
                     interval = float(trigger.repeat_interval_sec)
                     if interval <= 0:
-                        raise ValueError("repeat_interval_sec must be positive")
-                    steps = max(1, int((now - float(trigger.fire_at)) // interval) + 1)
+                        raise ValueError(
+                            "repeat_interval_sec must be positive")
+                    steps = max(
+                        1, int((now - float(trigger.fire_at)) // interval) + 1)
                     next_fire_at = float(trigger.fire_at) + steps * interval
             elif trigger.trigger_type == TriggerType.FUZZY:
                 if trigger.repeat and trigger.repeat_interval_sec is not None:
@@ -263,7 +279,8 @@ class AgentScheduler:
                         sort_keys=True,
                         separators=(",", ":"),
                     )
-                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{payload}"
+                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{
+                        payload}"
                     seed = int.from_bytes(
                         hashlib.sha256(seed_input.encode()).digest()[:8],
                         "big",
@@ -272,8 +289,10 @@ class AgentScheduler:
                     slots = []
                     for index in range(slot_count):
                         center = window_start + bucket_size * (index + 0.5)
-                        slots.append(center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
-                    future_slots = [slot for slot in slots if slot > search_from]
+                        slots.append(
+                            center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
+                    future_slots = [
+                        slot for slot in slots if slot > search_from]
                     if future_slots:
                         next_fire_at = future_slots[0]
                         break
@@ -302,7 +321,6 @@ class AgentScheduler:
                 pass
             self._task = None
 
-        await self._backend.close()
         await logger.info("scheduler_stopped", "Scheduler stopped.")
 
     async def __aenter__(self) -> "AgentScheduler":
@@ -335,7 +353,14 @@ class AgentScheduler:
             state_store = self._state_store
             if state_store is None:
                 raise ValueError("mood triggers require state_store")
-            mood = await state_store.get_mood()
+            payload = trigger.payload
+            mood = await state_store.get_mood(
+                resolve_thread_id(
+                    target_user_id=str(payload.get("target_user_id") or "").strip(),
+                    channel_id=str(payload.get("channel_id") or "").strip(),
+                    author_id=str(payload.get("author_id") or "").strip(),
+                )
+            )
             mood_keys = {key.lower(): key for key in EMOTIONS}
             mood_key = str(trigger.mood_key or "").strip().lower()
             if mood_key not in mood_keys:
@@ -352,7 +377,8 @@ class AgentScheduler:
                 )
         elif trigger.repeat:
             if trigger.trigger_type == TriggerType.PRECISE:
-                next_fire_at = fired_at + float(trigger.repeat_interval_sec or 0.0)
+                next_fire_at = fired_at + \
+                    float(trigger.repeat_interval_sec or 0.0)
             elif trigger.trigger_type == TriggerType.FUZZY:
                 start = float(trigger.window_start_ts or 0.0)
                 end = float(trigger.window_end_ts or 0.0)
@@ -387,7 +413,8 @@ class AgentScheduler:
                         sort_keys=True,
                         separators=(",", ":"),
                     )
-                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{payload}"
+                    seed_input = f"{trigger.trigger_id}:{int(day_start)}:{
+                        payload}"
                     seed = int.from_bytes(
                         hashlib.sha256(seed_input.encode()).digest()[:8],
                         "big",
@@ -396,8 +423,10 @@ class AgentScheduler:
                     slots = []
                     for index in range(slot_count):
                         center = window_start + bucket_size * (index + 0.5)
-                        slots.append(center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
-                    future_slots = [slot for slot in slots if slot > search_from]
+                        slots.append(
+                            center + (rng.uniform(-wiggle, wiggle) if wiggle else 0.0))
+                    future_slots = [
+                        slot for slot in slots if slot > search_from]
                     if future_slots:
                         next_fire_at = future_slots[0]
                         break
@@ -407,7 +436,8 @@ class AgentScheduler:
             fired = FiredTrigger(
                 trigger=trigger,
                 fired_at=fired_at,
-                was_late=fired_at > float(trigger.fire_at or fired_at) + self._tick,
+                was_late=fired_at > float(
+                    trigger.fire_at or fired_at) + self._tick,
             )
 
             handlers = self._handlers.get(trigger.trigger_type) or []
@@ -439,7 +469,8 @@ class AgentScheduler:
 
             if self._bus is not None:
                 content = str(
-                    trigger.payload.get("content") or trigger.payload.get("message") or ""
+                    trigger.payload.get(
+                        "content") or trigger.payload.get("message") or ""
                 ).strip()
                 if not content:
                     await logger.warning(
@@ -470,11 +501,18 @@ class AgentScheduler:
                         MessageEnvelope(
                             source=MessageSource.SCHEDULER,
                             content=content,
-                            channel_id=_optional_text(trigger.payload.get("channel_id")),
-                            author_id=_optional_text(trigger.payload.get("author_id")),
-                            message_id=_optional_text(trigger.payload.get("message_id")),
-                            target_user_id=_optional_text(
-                                trigger.payload.get("target_user_id")
+                            channel_id=str(
+                                trigger.payload.get(
+                                    "channel_id") or "").strip(),
+                            author_id=str(
+                                trigger.payload.get(
+                                    "author_id") or "").strip(),
+                            message_id=str(
+                                trigger.payload.get(
+                                    "message_id") or "").strip(),
+                            target_user_id=str(
+                                trigger.payload.get(
+                                    "target_user_id" or "").strip()
                             ),
                             metadata=metadata,
                         )
@@ -486,13 +524,6 @@ class AgentScheduler:
 
         trigger.fire_at = next_fire_at
         await self._backend.reschedule(trigger)
-
-
-def _optional_text(value: Any) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
 def _start_of_day(ts: float) -> float:
     dt = datetime.fromtimestamp(ts).astimezone()
     midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)

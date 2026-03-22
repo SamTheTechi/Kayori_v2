@@ -37,7 +37,8 @@ class EdgeTtsAdapter:
 
         chosen_voice = str(voice or self.voice).strip() or self.voice
         chosen_format = (
-            str(response_format or self.response_format).strip() or self.response_format
+            str(response_format or self.response_format).strip(
+            ) or self.response_format
         )
         chosen_speed = float(self.speed if speed is None else speed)
 
@@ -71,7 +72,8 @@ class EdgeTtsAdapter:
 
         return TtsSynthesisResult(
             audio_bytes=audio_bytes,
-            content_type=str(response.headers.get("content-type", "audio/mpeg")),
+            content_type=str(response.headers.get(
+                "content-type", "audio/mpeg")),
             voice=chosen_voice,
         )
 

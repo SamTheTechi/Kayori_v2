@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from adapters.runtime.discord_runtime import DiscordRuntime
-from shared_types.models import MessageAttachment, MessageSource, OutboundMessage
+from src.adapters.runtime.discord_runtime import DiscordRuntime
+from src.shared_types.models import MessageSource, OutboundMessage
 
 
 @dataclass(slots=True)
@@ -62,8 +62,9 @@ class DiscordOutputAdapter:
         self, *, message: OutboundMessage, route: tuple[str, str]
     ) -> None:
         mode, target_id = route
-        content = _compose_text_with_media(
-            message.content, message.attachments)
+        # content = _compose_text_with_media(
+        #     message.content, message.attachments)
+        content = message.content.strip()
         if not (content or "").strip():
             return
 
@@ -149,12 +150,12 @@ def _split_discord_chunks(content: str, max_len: int = 1900) -> list[str]:
     return chunks
 
 
-def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
-    if not attachments:
-        return content
-    lines = [content.strip()] if content.strip() else []
-    lines.append("Media:")
-    for item in attachments[:4]:
-        detail = item.url or item.filename or "[embedded]"
-        lines.append(f"- {item.kind}: {detail}")
-    return "\n".join(lines)
+# def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
+#     if not attachments:
+#         return content
+#     lines = [content.strip()] if content.strip() else []
+#     lines.append("Media:")
+#     for item in attachments[:4]:
+#         detail = item.url or item.filename or "[embedded]"
+#         lines.append(f"- {item.kind}: {detail}")
+#     return "\n".join(lines)

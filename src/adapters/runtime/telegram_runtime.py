@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from telegram import Bot, Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-from logger import get_logger
+from src.logger import get_logger
 
 TelegramUpdateHandler = Callable[[Update], Awaitable[None]]
 logger = get_logger("runtime.telegram")

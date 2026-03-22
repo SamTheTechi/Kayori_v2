@@ -1,15 +1,15 @@
 """Kayori v2 - Async, adapter-based AI companion built around LangGraph."""
 
-from agent.service import ReactAgentService
-from core.orchestrator import AgentOrchestrator
-from core.outputsink import OutputSink
-from shared_types.models import (
+from src.agent.service import ReactAgentService
+from src.core.orchestrator import AgentOrchestrator
+from src.core.outputsink import OutputSink
+from src.shared_types.models import (
     MessageEnvelope,
     MessageSource,
     MoodState,
     OutboundMessage,
 )
-from shared_types.protocol import (
+from src.shared_types.protocol import (
     InputAdapter,
     MessageBus,
     OutputAdapter,

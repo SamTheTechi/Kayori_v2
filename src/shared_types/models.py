@@ -5,20 +5,40 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4
+
 from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
+
+from src.shared_types.thread_identity import resolve_thread_id
+
 
 EMOTIONS = (
     "Affection",
     "Amused",
-    "Confidence",
-    "Frustrated",
-    "Concerned",
     "Curious",
+    "Concerned",
+    "Disgusted",
+    "Embarrassed",
+    "Frustrated",
+
     "Trust",
-    "Calmness",
+    "Attachment",
+    "Confidence",
 )
-SLOW_EMOTIONS = ("Trust", "Confidence", "Calmness")
-FAST_EMOTIONS = ("Affection", "Amused", "Frustrated", "Concerned", "Curious")
+FAST_EMOTIONS = (
+    "Affection",
+    "Amused",
+    "Curious",
+    "Concerned",
+    "Disgusted",
+    "Embarrassed",
+    "Frustrated",
+)
+LONG_EMOTIONS = (
+    "Trust",
+    "Attachment",
+    "Confidence",
+)
+
 MOOD_MIN = 0.0
 MOOD_MAX = 1.0
 MOOD_NEUTRAL = 0.5
@@ -69,24 +89,27 @@ class MessagesHistory:
 class MoodState:
     Affection: float = MOOD_NEUTRAL
     Amused: float = MOOD_NEUTRAL
-    Frustrated: float = MOOD_NEUTRAL
-    Concerned: float = MOOD_NEUTRAL
     Curious: float = MOOD_NEUTRAL
-
-    Confidence: float = MOOD_NEUTRAL
+    Concerned: float = MOOD_NEUTRAL
+    Disgusted: float = MOOD_NEUTRAL
+    Embarrassed: float = MOOD_NEUTRAL
+    Frustrated: float = MOOD_NEUTRAL
     Trust: float = MOOD_NEUTRAL
-    Calmness: float = MOOD_NEUTRAL
+    Attachment: float = MOOD_NEUTRAL
+    Confidence: float = MOOD_NEUTRAL
 
     def as_dict(self) -> dict[str, float]:
         return {
             "Affection": self.Affection,
             "Amused": self.Amused,
-            "Confidence": self.Confidence,
-            "Frustrated": self.Frustrated,
-            "Concerned": self.Concerned,
             "Curious": self.Curious,
+            "Concerned": self.Concerned,
+            "Disgusted": self.Disgusted,
+            "Embarrassed": self.Embarrassed,
+            "Frustrated": self.Frustrated,
             "Trust": self.Trust,
-            "Calmness": self.Calmness,
+            "Attachment": self.Attachment,
+            "Confidence": self.Confidence,
         }
 
     @classmethod
@@ -188,15 +211,12 @@ class MessageEnvelope:
         default_factory=lambda: datetime.now(UTC).isoformat())
 
     def thread_id(self, fallback_user_id: str | None = None) -> str:
-        if self.channel_id:
-            return str(self.channel_id)
-        if self.target_user_id:
-            return str(self.target_user_id)
-        if self.author_id:
-            return str(self.author_id)
-        if fallback_user_id:
-            return str(fallback_user_id)
-        return "global"
+        return resolve_thread_id(
+            target_user_id=self.target_user_id,
+            channel_id=self.channel_id,
+            author_id=self.author_id,
+            fallback_user_id=fallback_user_id,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

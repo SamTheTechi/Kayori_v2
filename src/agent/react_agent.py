@@ -1,27 +1,22 @@
 from __future__ import annotations
 
-from typing import Any
-
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
+from langchain_core.language_models import BaseChatModel
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
-from agent.nodes.call_model import build_call_model_node
-from agent.nodes.finalize import build_finalize_node
-from agent.nodes.postprocess import build_postprocess_node
-from agent.nodes.prepare_context import build_prepare_context_node
-from shared_types.types import AgentGraphState
-from shared_types.protocol import StateStore
+from src.agent.nodes.call_model import build_call_model_node
+from src.agent.nodes.postprocess import build_postprocess_node
+from src.agent.nodes.prepare_context import build_prepare_context_node
+from src.shared_types.types import AgentGraphState
 
 
 def create_react_agent_graph(
     *,
-    model: Any,
+    model: BaseChatModel,
     tools: list[BaseTool],
-    state: StateStore,
-    history_store: dict,
     max_history_messages: int,
     timeout_seconds: int = 60,
 ) -> CompiledStateGraph:
@@ -29,19 +24,20 @@ def create_react_agent_graph(
 
     bound_model = model.bind_tools(tools) if tools else model
 
-    graph.add_node("prepare_context", build_prepare_context_node())
+    graph.add_node(
+        "prepare_context",
+        build_prepare_context_node()
+    )
     graph.add_node(
         "call_model",
         build_call_model_node(
-            model=bound_model, timeout_seconds=timeout_seconds),
-    )
-    graph.add_node("postprocess", build_postprocess_node())
-    graph.add_node(
-        "finalize",
-        build_finalize_node(
-            history_store=history_store,
-            max_history_messages=max_history_messages,
+            model=bound_model,
+            timeout_seconds=timeout_seconds
         ),
+    )
+    graph.add_node(
+        "postprocess",
+        build_postprocess_node()
     )
 
     has_tools = len(tools) > 0
@@ -76,7 +72,6 @@ def create_react_agent_graph(
     else:
         graph.add_edge("call_model", "postprocess")
 
-    graph.add_edge("postprocess", "finalize")
-    graph.add_edge("finalize", END)
+    graph.add_edge("postprocess", END)
 
     return graph.compile()

@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from logger import get_logger
-from shared_types.models import MessageSource, OutboundMessage
-from shared_types.protocol import OutputAdapter
-from shared_types.types import OutputSinkMode
+from src.logger import get_logger
+from src.shared_types.models import MessageSource, OutboundMessage
+from src.shared_types.protocol import OutputAdapter
+from src.shared_types.types import OutputSinkMode
 
 logger = get_logger("core.outputsink")
 

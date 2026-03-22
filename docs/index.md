@@ -8,7 +8,7 @@ Kayori v2 is an intelligent conversational AI agent that connects to Discord, Te
 
 - **Natural Conversations** - ReAct-based reasoning with context-aware responses
 - **Tool Execution** - Weather lookup, Spotify control, reminders, web search, and MCP tools
-- **Emotional Intelligence** - Mood analysis across 28 emotions adapting to user sentiment
+- **Emotional Intelligence** - Mood analysis across fast and long-term emotion layers
 - **Memory Systems** - Conversation history + long-term episodic memory (Pinecone/Neo4j)
 - **Proactive Behavior** - Scheduler-driven curiosity, reminders, and mood-triggered actions
 - **Audio Support** - Speech-to-text (Whisper) and text-to-speech (EdgeTTS)
@@ -35,6 +35,7 @@ python examples/main.py
 
 - [Getting Started](getting-started.md) - Setup, environment, and running locally
 - [Architecture](architecture.md) - System design, components, and message flow
+- [Mood Engine](mood-engine.md) - Emotional state model, update rules, and design reasoning
 
 ## Architecture Overview
 

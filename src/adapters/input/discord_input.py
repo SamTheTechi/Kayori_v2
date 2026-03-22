@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 import discord
 
-from adapters.runtime.discord_runtime import DiscordMessageHandler, DiscordRuntime
-from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocol import MessageBus
+from src.adapters.runtime.discord_runtime import DiscordMessageHandler, DiscordRuntime
+from src.shared_types.models import MessageEnvelope, MessageSource
+from src.shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

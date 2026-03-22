@@ -10,8 +10,8 @@ from pydantic import BaseModel, PrivateAttr
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyOAuth
 
-from core.circuit_breaker import CircuitBreaker, CircuitOpenError
-from shared_types.tool_schemas import SpotifyToolArgs
+from src.core.circuit_breaker import CircuitBreaker, CircuitOpenError
+from src.shared_types.tool_schemas import SpotifyToolArgs
 
 SPOTIFY_TAG = "[spotify_tool]"
 NO_DEVICE_MESSAGE = "No active Spotify device found."

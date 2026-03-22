@@ -1,75 +1,57 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
-from langchain_groq import ChatGroq
 
-from agent.react_agent import create_react_agent_graph
-from logger import get_logger
-from shared_types.models import MoodState
+from src.agent.react_agent import create_react_agent_graph
+from src.logger import get_logger
+from src.shared_types.models import MoodState
 
 logger = get_logger("agent.service")
 
 
-@dataclass(slots=True)
 class ReactAgentService:
-    model: Any
-    tools: list[BaseTool] = field(default_factory=list)
-    max_history_messages: int = 16
-    timeout_seconds: int = 60
+    def __init__(
+        self,
+        *,
+        model: BaseChatModel,
+        tools: list[BaseTool] | None = None,
+        max_history_messages: int = 16,
+        timeout_seconds: int = 60,
+    ) -> None:
+        self.model = model
+        self.tools = list(tools or [])
+        self.max_history_messages = max(2, max_history_messages)
+        self.timeout_seconds = timeout_seconds
+        self._graph: Any = self._build_graph()
 
-    _graph: Any = field(default=None, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.max_history_messages = max(2, self.max_history_messages)
-        self._graph = create_react_agent_graph(
+    def _build_graph(self) -> Any:
+        return create_react_agent_graph(
             model=self.model,
             tools=list(self.tools),
             max_history_messages=self.max_history_messages,
             timeout_seconds=self.timeout_seconds,
         )
 
-    @classmethod
-    def from_env(
-        cls,
-        *,
-        model_name: str = "llama-3.3-70b-versatile",
-        temperature: float = 0.7,
-        tools: list[BaseTool] | None = None,
-        max_history_messages: int = 16,
-        timeout_seconds: int = 60,
-    ) -> ReactAgentService:
-        from os import getenv
-
-        model = ChatGroq(
-            model=model_name,
-            temperature=temperature,
-            api_key=getenv("API_KEY"),
-        )
-        return cls(
-            model=model,
-            tools=list(tools or []),
-            max_history_messages=max_history_messages,
-            timeout_seconds=timeout_seconds,
-        )
-
     async def respond(
         self,
         *,
-        message: str,
+        content: str,
         thread_id: str,
+        messages: list[BaseMessage] | None = None,
         mood: MoodState | None = None,
     ) -> str:
-        text = (message or "").strip()
+        text = (content or "").strip()
         if not text:
             return ""
 
         state_input = {
-            "message": text,
+            "content": text,
             "thread_id": thread_id,
+            "messages": messages,
             "mood": mood,
         }
 

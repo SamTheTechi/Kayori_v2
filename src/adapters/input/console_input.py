@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 
-from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocol import MessageBus
+from src.shared_types.models import MessageEnvelope, MessageSource
+from src.shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

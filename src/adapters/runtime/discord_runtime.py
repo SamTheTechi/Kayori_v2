@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import discord
 
-from logger import get_logger
+from src.logger import get_logger
 
 DiscordMessageHandler = Callable[[discord.Message], Awaitable[None]]
 logger = get_logger("runtime.discord")

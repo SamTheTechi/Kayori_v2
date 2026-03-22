@@ -1,12 +1,13 @@
 import asyncio
 import os
-import time
-from datetime import datetime
 
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
+from langchain_groq import ChatGroq
 
-from adapters import (
+# from redis.asyncio import Redis
+
+from src.adapters import (
     ConsoleInputGateway,
     ConsoleOutputAdapter,
     DiscordInputAdapter,
@@ -15,6 +16,8 @@ from adapters import (
     EdgeTtsAdapter,
     InMemoryMessageBus,
     InMemoryStateStore,
+    # RedisMessageBus,
+    # RedisStateStore,
     TelegramInputAdapter,
     TelegramOutputAdapter,
     TelegramRuntime,
@@ -23,11 +26,12 @@ from adapters import (
     WebhookRuntime,
     WhisperSttAdapter,
 )
-from agent import ReactAgentService
-from core import AgentOrchestrator, OutputSink
-from logger import get_logger
-from shared_types import InputAdapter, OutputAdapter
-from tools import CalendarTools, ReminderTool, SpotifyTool
+from src.agent import ReactAgentService
+from src.core import AgentOrchestrator, MoodEngine, OutputSink
+from src.logger import get_logger
+from src.shared_types import InputAdapter, OutputAdapter
+from src.tools import CalendarTools, ReminderTool, SpotifyTool
+
 
 logger = get_logger("examples.main")
 
@@ -35,9 +39,8 @@ logger = get_logger("examples.main")
 async def _main() -> None:
     load_dotenv()
 
-    # Demo transport selection.
-    enabled_inputs = ["discord", "webhook"]
-    enabled_outputs = ["discord", "webhook"]
+    enabled_inputs = ["telegram", "webhook"]
+    enabled_outputs = ["telegram", "webhook"]
 
     # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
@@ -49,6 +52,7 @@ async def _main() -> None:
     webhook_bearer_token = "123"
     tts_base_url = "http://localhost:5050/v1"
     tts_api_key = "123"
+
     webhook_output_targets = [
         item.strip()
         for item in str(os.getenv("WEBHOOK_OUTPUT_URLS", "")).split(",")
@@ -68,6 +72,11 @@ async def _main() -> None:
 
     bus = InMemoryMessageBus()
     state = InMemoryStateStore()
+
+    # redis_client = Redis.from_url()
+    # bus = RedisMessageBus(redis_client),
+    # state = RedisStateStore(redis_client),
+
     webhook_tts = EdgeTtsAdapter(api_key=tts_api_key, base_url=tts_base_url)
 
     # Output adapters.
@@ -115,15 +124,31 @@ async def _main() -> None:
     tools.extend(CalendarTools())
     # tools.extend(GmailTools())
 
-    agent = ReactAgentService.from_env(
-        model_name="openai/gpt-oss-120b",
-        tools=tools,
+    chat_model = ChatGroq(
+        model="openai/gpt-oss-120b",
+        temperature=0.6,
+        api_key=groq_api_key
+    )
+    chat_model2 = ChatGroq(
+        model="openai/gpt-oss-20b",
+        temperature=0.7,
+        api_key=groq_api_key
+    )
+
+    agent = ReactAgentService(
+        model=chat_model,
+        tools=tools
+    )
+
+    mood_engine = MoodEngine(
+        model=chat_model2,
     )
 
     orchestrator = AgentOrchestrator(
         bus=bus,
         state_store=state,
         agent=agent,
+        mood_engine=mood_engine,
         output=output_dispatcher,
     )
 
@@ -248,7 +273,7 @@ async def _main() -> None:
         for task in input_tasks:
             task.cancel()
         await asyncio.gather(*input_tasks, return_exceptions=True)
-
+        # await redis_client.shutdown()
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
         # await scheduler.stop()

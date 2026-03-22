@@ -71,8 +71,8 @@ class SpotifyToolArgs(_InjectedStateArgs):
         min_length=1,
         description="Song or artist search text used with command='play_track'.",
     )
-    step: int = Field(
-        default=10,
+    step: int | None = Field(
+        default=None,
         ge=1,
         le=25,
         description="Volume step used with volume_up and volume_down.",

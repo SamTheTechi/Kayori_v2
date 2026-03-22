@@ -7,9 +7,9 @@ from typing import Any
 
 import httpx
 
-from adapters.audio import EdgeTtsAdapter
-from adapters.runtime.webhook_runtime import WebhookRuntime
-from shared_types.models import OutboundMessage
+from src.adapters.audio import EdgeTtsAdapter
+from src.adapters.runtime.webhook_runtime import WebhookRuntime
+from src.shared_types.models import OutboundMessage
 
 
 @dataclass(slots=True)
@@ -37,6 +37,9 @@ class WebhookOutputAdapter:
 
     async def send(self, message: OutboundMessage) -> None:
         await self._capture_runtime_response(message)
+
+        if not str(message.content or "").strip():
+            return
 
         if not self.targets:
             return
@@ -95,12 +98,10 @@ class WebhookOutputAdapter:
             "reply": str(message.content or "").strip(),
             "envelope_id": str(metadata.get("webhook_envelope_id") or ""),
         }
-        if not payload["reply"]:
-            raise RuntimeError("Agent returned empty reply.")
         response_kind = (
             str(metadata.get("webhook_response_kind") or "text").strip().lower()
         )
-        if response_kind != "audio":
+        if not payload["reply"] or response_kind != "audio":
             return payload
 
         tts = self.tts

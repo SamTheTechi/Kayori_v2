@@ -1,84 +1,23 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
 
-try:
-    import redis.asyncio as aioredis
-    from redis.asyncio.lock import Lock as RedisLock
-except ImportError:
-    raise ImportError("Install redis: pip install redis")
+from redis.asyncio import Redis
 
-from shared_types.types import Trigger
+from src.shared_types.types import Trigger
 
 # Redis key names
 _HEAP_KEY = "scheduler:heap"
 _SUPPRESS_KEY = "scheduler:suppress"
-_LEADER_KEY = "scheduler:leader"
 _TRIGGER_PREFIX = "scheduler:trigger:"
 
 
 class RedisBackend:
-    """
-    Redis-backed scheduler using a Sorted Set as a min-heap.
-
-    Persistence  : Native via RDB / AOF — configure Redis itself.
-    Redundancy   : RedLock single-leader election. Only one instance runs
-                   the pop loop at a time; others wait for the lock to expire.
-    Pub/Sub hook : Mood engine can PUBLISH to 'agent:mood:change' and this
-                   backend will reactively recompute fire times (wire up via
-                   subscribe_mood_changes() when mood engine is ready).
-
-    Key layout:
-      scheduler:heap              → ZSET  score=fire_at, member=trigger_id
-      scheduler:suppress          → HASH  trigger_id → suppress_until (float str)
-      scheduler:trigger:<id>      → STRING JSON-encoded trigger payload
-      scheduler:leader            → STRING  RedLock
-    """
-
     def __init__(
         self,
-        url: str = "redis://localhost:6379",
-        # seconds before lock expires (failover window)
-        leader_ttl: int = 30,
-        acquire_leader: bool = True,    # set False to run as a read-only replica
+        redis_client: Redis,
     ) -> None:
-        self._url = url
-        self._leader_ttl = leader_ttl
-        self._acquire_leader = acquire_leader
-        self._client: Optional[aioredis.Redis] = None
-        self._leader_lock: Optional[RedisLock] = None
-
-    # ------------------------------------------------------------------
-    # Connection
-    # ------------------------------------------------------------------
-
-    async def connect(self) -> None:
-        self._client = aioredis.from_url(self._url, decode_responses=True)
-        if self._acquire_leader:
-            self._leader_lock = self._client.lock(
-                _LEADER_KEY,
-                timeout=self._leader_ttl,
-                blocking_timeout=0,     # non-blocking — caller decides retry
-            )
-
-    async def acquire_leadership(self) -> bool:
-        """
-        Try to become the scheduler leader.
-        Returns True if this instance is now the leader.
-        Multiple instances should call this on startup; only one wins.
-        """
-        if self._leader_lock is None:
-            return True
-        try:
-            return await self._leader_lock.acquire()
-        except Exception:
-            return False
-
-    async def extend_leadership(self) -> None:
-        """Call periodically (e.g. every leader_ttl/2 seconds) to hold the lock."""
-        if self._leader_lock and await self._leader_lock.owned():
-            await self._leader_lock.extend(self._leader_ttl)
+        self._client = redis_client
 
     # ------------------------------------------------------------------
     # SchedulerBackend protocol
@@ -86,7 +25,8 @@ class RedisBackend:
 
     async def push(self, trigger: Trigger) -> None:
         pipe = self._client.pipeline()
-        raw = json.dumps(trigger.to_dict(), separators=(",", ":"), sort_keys=True)
+        raw = json.dumps(trigger.to_dict(), separators=(
+            ",", ":"), sort_keys=True)
         pipe.set(_TRIGGER_PREFIX + trigger.trigger_id, raw)
         pipe.zadd(_HEAP_KEY, {trigger.trigger_id: trigger.fire_at})
         await pipe.execute()
@@ -151,12 +91,6 @@ class RedisBackend:
         the scheduler can apply missed trigger policies before the main loop.
         """
         return await self.list_pending()
-
-    async def close(self) -> None:
-        if self._leader_lock and await self._leader_lock.owned():
-            await self._leader_lock.release()
-        if self._client:
-            await self._client.aclose()
 
     # ------------------------------------------------------------------
     # Mood engine hook (wire up later)

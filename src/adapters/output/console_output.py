@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from shared_types.models import OutboundMessage
+from src.shared_types.models import OutboundMessage
 
 
 @dataclass(slots=True)

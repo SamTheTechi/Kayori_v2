@@ -7,9 +7,9 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
-from shared_types.protocol import OutputAdapter
-from shared_types.tool_schemas import ReminderToolArgs
+from src.shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
+from src.shared_types.protocol import OutputAdapter
+from src.shared_types.tool_schemas import ReminderToolArgs
 
 
 class ReminderTool(BaseTool):

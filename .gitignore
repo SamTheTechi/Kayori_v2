@@ -7,9 +7,9 @@ __pycache__/
 *.so
 
 .spotify_token_cache.json
-credentials.json
+*credentials.json
 firebase.json
-token.json
+*token.json
 future.md
 
 # Distribution / packaging

@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage
 
-from shared_types.types import AgentGraphState
+from src.shared_types.types import AgentGraphState
 
 EMPTY_REPLY_TEXT = "I couldn't produce a reply just now."
 

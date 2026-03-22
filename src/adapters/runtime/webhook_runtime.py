@@ -9,7 +9,7 @@ from uuid import uuid4
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 
-from logger import get_logger
+from src.logger import get_logger
 
 WebhookEndpoint = Callable[[Request], Awaitable[Any]]
 logger = get_logger("runtime.webhook")

@@ -5,7 +5,7 @@ import heapq
 from itertools import count
 from uuid import uuid4
 
-from shared_types.types import ScheduledTask
+from src.shared_types.types import ScheduledTask
 
 
 class InMemorySchedulerStore:

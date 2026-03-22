@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 from telegram import Update
 
-from adapters.runtime.telegram_runtime import TelegramRuntime, TelegramUpdateHandler
-from shared_types.models import MessageEnvelope, MessageSource
-from shared_types.protocol import MessageBus
+from src.adapters.runtime.telegram_runtime import TelegramRuntime, TelegramUpdateHandler
+from src.shared_types.models import MessageEnvelope, MessageSource
+from src.shared_types.protocol import MessageBus
 
 
 @dataclass(slots=True)

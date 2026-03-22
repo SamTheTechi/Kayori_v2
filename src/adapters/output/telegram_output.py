@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from adapters.runtime.telegram_runtime import TelegramRuntime
-from shared_types.models import MessageAttachment, MessageSource, OutboundMessage
+from src.adapters.runtime.telegram_runtime import TelegramRuntime
+from src.shared_types.models import MessageSource, OutboundMessage
 
 
 @dataclass(slots=True)
@@ -55,11 +55,13 @@ class TelegramOutputAdapter:
             first = False
 
     async def _send_one(self, *, chat_id: str, message: OutboundMessage) -> None:
-        text_content = _compose_text_with_media(
-            message.content, message.attachments)
+        # text_content = _compose_text_with_media(
+        #     message.content, message.attachments)
+
         payload: dict[str, object] = {
             "chat_id": chat_id,
-            "text": text_content,
+            # "text": text_content,
+            "text": message.content
         }
 
         if message.source == MessageSource.TELEGRAM and message.reply_to_message_id:
@@ -116,13 +118,13 @@ def _split_telegram_chunks(content: str, max_len: int = 4000) -> list[str]:
         remaining = remaining[split_at:].lstrip("\n")
     return chunks
 
-
-def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
-    if not attachments:
-        return content
-    lines = [content.strip()] if content.strip() else []
-    lines.append("Media:")
-    for item in attachments[:4]:
-        detail = item.url or item.filename or "[embedded]"
-        lines.append(f"- {item.kind}: {detail}")
-    return "\n".join(lines)
+#
+# def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
+#     if not attachments:
+#         return content
+#     lines = [content.strip()] if content.strip() else []
+#     lines.append("Media:")
+#     for item in attachments[:4]:
+#         detail = item.url or item.filename or "[embedded]"
+#         lines.append(f"- {item.kind}: {detail}")
+#     return "\n".join(lines)

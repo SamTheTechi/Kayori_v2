@@ -8,11 +8,11 @@ from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
-from shared_types.models import MessageSource, MoodState
+from src.shared_types.models import MessageSource, MoodState
 
 
 class AgentGraphState(TypedDict, total=False):
-    user_text: str
+    content: str
     thread_id: str
     messages: Annotated[list[BaseMessage], add_messages]
     mood: MoodState | None
@@ -144,25 +144,6 @@ class FiredTrigger:
     was_late: bool
 
 
-@runtime_checkable
-class SchedulerBackend(Protocol):
-    async def push(self, trigger: Trigger) -> None: ...
-
-    async def pop_due(self, now: float) -> list[Trigger]: ...
-
-    async def reschedule(self, trigger: Trigger) -> None: ...
-
-    async def suppress(self, trigger_id: str, until: float) -> None: ...
-
-    async def remove(self, trigger_id: str) -> None: ...
-
-    async def list_pending(self) -> list[Trigger]: ...
-
-    async def restore(self) -> list[Trigger]: ...
-
-    async def close(self) -> None: ...
-
-
 def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -197,7 +178,6 @@ __all__ = [
     "OutputSinkMode",
     "ScheduleRequest",
     "ScheduledTask",
-    "SchedulerBackend",
     "SchedulerMode",
     "Trigger",
     "TriggerType",

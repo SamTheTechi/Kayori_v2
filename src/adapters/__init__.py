@@ -1,34 +1,34 @@
 """Adapters for input/output, state management, message bus, and runtime integrations."""
 
 # Input adapters
-from adapters.audio.stt import WhisperSttAdapter
+from src.adapters.audio.stt import WhisperSttAdapter
 
 # Audio adapters
-from adapters.audio.tts import EdgeTtsAdapter
+from src.adapters.audio.tts import EdgeTtsAdapter
 
 # Message bus
-from adapters.bus.in_memory import InMemoryMessageBus
-from adapters.input.console_input import ConsoleInputGateway
-from adapters.input.discord_input import DiscordInputAdapter
-from adapters.input.telegram_input import TelegramInputAdapter
-from adapters.input.webhook_input import WebhookInputAdapter
-from adapters.output.console_output import ConsoleOutputAdapter
+from src.adapters.bus.in_memory import InMemoryMessageBus
+from src.adapters.bus.redis_bus import RedisMessageBus
+
+from src.adapters.input.console_input import ConsoleInputGateway
+from src.adapters.input.discord_input import DiscordInputAdapter
+from src.adapters.input.telegram_input import TelegramInputAdapter
+from src.adapters.input.webhook_input import WebhookInputAdapter
 
 # Output adapters
-from adapters.output.discord_output import DiscordOutputAdapter
-from adapters.output.telegram_output import TelegramOutputAdapter
-from adapters.output.webhook_output import WebhookOutputAdapter
+from src.adapters.output.console_output import ConsoleOutputAdapter
+from src.adapters.output.discord_output import DiscordOutputAdapter
+from src.adapters.output.telegram_output import TelegramOutputAdapter
+from src.adapters.output.webhook_output import WebhookOutputAdapter
 
 # Runtimes
-from adapters.runtime.discord_runtime import DiscordRuntime
-from adapters.runtime.telegram_runtime import TelegramRuntime
-from adapters.runtime.webhook_runtime import WebhookRuntime
-
-# Safety/audit
-from adapters.safety.audit_logger import JsonlAuditLogger
+from src.adapters.runtime.discord_runtime import DiscordRuntime
+from src.adapters.runtime.telegram_runtime import TelegramRuntime
+from src.adapters.runtime.webhook_runtime import WebhookRuntime
 
 # State stores
-from adapters.state.in_memory import InMemoryStateStore
+from src.adapters.state.in_memory import InMemoryStateStore
+from src.adapters.state.redis import RedisStateStore
 
 __all__ = [
     # Input
@@ -43,8 +43,10 @@ __all__ = [
     "WebhookOutputAdapter",
     # Bus
     "InMemoryMessageBus",
+    "RedisMessageBus",
     # State
     "InMemoryStateStore",
+    "RedisStateStore",
     # Runtimes
     "DiscordRuntime",
     "TelegramRuntime",
@@ -52,6 +54,4 @@ __all__ = [
     # Audio
     "EdgeTtsAdapter",
     "WhisperSttAdapter",
-    # Safety
-    "JsonlAuditLogger",
 ]

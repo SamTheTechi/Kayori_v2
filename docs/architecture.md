@@ -49,10 +49,12 @@ LangGraph ReAct agent that:
 
 Analyzes user messages and adjusts emotional state:
 
-- 28 emotion dimensions (Affection, Amused, Confidence, Frustrated, etc.)
-- Dynamic delta analysis based on message content
-- Emoji mapping for each emotion
-- Fast/slow emotion categories with different decay rates
+- Fast emotion delta classification from user text
+- Relationship-style long emotions updated more slowly
+- Shared reinforce/conflict graph for emotion propagation
+- Separate drift and spike behavior for ongoing mood dynamics
+
+See [Mood Engine](mood-engine.md) for the detailed reasoning and logic.
 
 ### Scheduler
 
