@@ -8,7 +8,7 @@ from langchain_core.tools import BaseTool
 
 from src.agent.react_agent import create_react_agent_graph
 from src.logger import get_logger
-from src.shared_types.models import MoodState
+from src.shared_types.models import MessageEnvelope, MoodState
 
 logger = get_logger("agent.service")
 
@@ -19,12 +19,10 @@ class ReactAgentService:
         *,
         model: BaseChatModel,
         tools: list[BaseTool] | None = None,
-        max_history_messages: int = 16,
         timeout_seconds: int = 60,
     ) -> None:
         self.model = model
         self.tools = list(tools or [])
-        self.max_history_messages = max(2, max_history_messages)
         self.timeout_seconds = timeout_seconds
         self._graph: Any = self._build_graph()
 
@@ -32,7 +30,6 @@ class ReactAgentService:
         return create_react_agent_graph(
             model=self.model,
             tools=list(self.tools),
-            max_history_messages=self.max_history_messages,
             timeout_seconds=self.timeout_seconds,
         )
 
@@ -40,9 +37,9 @@ class ReactAgentService:
         self,
         *,
         content: str,
-        thread_id: str,
         messages: list[BaseMessage] | None = None,
         mood: MoodState | None = None,
+        envelope: MessageEnvelope,
     ) -> str:
         text = (content or "").strip()
         if not text:
@@ -50,9 +47,9 @@ class ReactAgentService:
 
         state_input = {
             "content": text,
-            "thread_id": thread_id,
             "messages": messages,
             "mood": mood,
+            "envelope": envelope,
         }
 
         try:
@@ -62,7 +59,9 @@ class ReactAgentService:
                 "agent_graph_invoke_failed",
                 "Agent graph invocation failed.",
                 context={
-                    "thread_id": thread_id,
+                    "source": str(envelope.source),
+                    "channel_id": envelope.channel_id,
+                    "target_user_id": envelope.target_user_id,
                 },
                 error=exc,
             )

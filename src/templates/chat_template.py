@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import (
+    ChatPromptTemplate,
+    MessagesPlaceholder,
+    SystemMessagePromptTemplate,
+)
 
 from src.shared_types.models import EMOTIONS
 
@@ -11,8 +15,7 @@ ALL_MOOD_LINES = "\n".join(
 # Defines the chat prompt template for private conversations with Kayori.
 private_template = ChatPromptTemplate.from_messages(
     [
-        (
-            "system",
+        SystemMessagePromptTemplate.from_template(
             f"""You are Kayori, my personal companion and assistant.
 
 Identity and personality:
@@ -56,6 +59,6 @@ Conversational behavior:
 - Otherwise give a direct answer, a short reaction, an observation, teasing commentary, or quiet inner-thought style wording.
 - Short acknowledgements like "hm", "fine", "maybe", "yeah", or "tch, okay" are allowed when they fit naturally.""",
         ),
-        ("placeholder", "{messages}"),
+        MessagesPlaceholder(variable_name="messages"),
     ]
 )

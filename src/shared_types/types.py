@@ -3,19 +3,19 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal, Protocol, TypedDict, runtime_checkable, Annotated
+from typing import Any, Literal,  TypedDict, Annotated
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
 
-from src.shared_types.models import MessageSource, MoodState
+from src.shared_types.models import MessageSource, MoodState, MessageEnvelope
 
 
 class AgentGraphState(TypedDict, total=False):
     content: str
-    thread_id: str
     messages: Annotated[list[BaseMessage], add_messages]
     mood: MoodState | None
+    envelope: MessageEnvelope
     reply_text: str
     error_reason: str | None
 

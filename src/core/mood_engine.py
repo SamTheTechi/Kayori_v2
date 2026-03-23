@@ -6,7 +6,9 @@ import random
 import re
 from typing import Any
 
+from src.logger import get_logger
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage, HumanMessage
 from src.shared_types.models import (
     EMOTIONS,
     MOOD_NEUTRAL,
@@ -47,6 +49,17 @@ reinforces = {
 }
 
 
+def _log_async(coro: Any) -> None:
+    try:
+        asyncio.create_task(coro)
+    except RuntimeError:
+        # No running loop means we're outside the async runtime path.
+        pass
+
+
+logger = get_logger("core.mood_engine")
+
+
 class MoodEngine:
     delta_scale: float = 0.1
 
@@ -84,24 +97,42 @@ class MoodEngine:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    async def analyze(self, content: str) -> dict[str, float]:
+    async def analyze(
+        self,
+        content: str,
+        messages: list[BaseMessage] | None = None,
+        thread_id: str | None = None
+    ) -> dict[str, float]:
         text = str(content or "").strip()
         if not text:
             return self._neutral_delta()
 
-        prompt_messages = mood_classifier_template.format_messages(text=text)
+        prompt_messages = mood_classifier_template.format_messages(
+            messages=[*(messages or []), HumanMessage(content=text)]
+        )
 
         try:
             raw = await asyncio.wait_for(
                 self.model.ainvoke(prompt_messages),
                 timeout=max(0.05, float(self.timeout_seconds)),
             )
-        except Exception:
+        except Exception as exc:
+            _log_async(
+                logger.warning(
+                    "mood_model_call_failed",
+                    "Mood model invocation failed.",
+                    context={
+                        "thread_id": thread_id,
+                        "message_length": len(text),
+                        "timeout_seconds": float(self.timeout_seconds),
+                        "error_type": exc.__class__.__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            )
             return self._neutral_delta()
 
-        parsed = self._parse_delta(self._extract_content(raw))
-        print("[mood][delta]:", parsed)
-        return parsed
+        return self._parse_delta(self._extract_content(raw))
 
     def apply(self, current: MoodState, delta: dict[str, float]) -> MoodState:
         next_state = MoodState.from_dict(current.as_dict())
@@ -159,7 +190,6 @@ class MoodEngine:
                 )
 
         result = next_state.clamp()
-        print("[mood][final]:", result)
         return result
 
     def drift(self, current: MoodState, amount: float = 0.01) -> MoodState:
@@ -251,23 +281,61 @@ class MoodEngine:
     @classmethod
     def _parse_delta(cls, raw_text: str) -> dict[str, float]:
         if not raw_text:
+            _log_async(
+                logger.debug(
+                    "mood_parse_empty",
+                    "Mood model returned empty content.",
+                )
+            )
             return cls._neutral_delta()
 
         try:
             data = json.loads(raw_text)
             payload: dict[str, Any] | None = data if isinstance(
                 data, dict) else None
-        except Exception:
+        except Exception as exc:
+            _log_async(
+                logger.warning(
+                    "mood_parse_json_failed",
+                    "Mood model response was not valid JSON.",
+                    context={
+                        "raw_text_length": len(raw_text),
+                        "error_type": exc.__class__.__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            )
             match = re.search(r"\{[\s\S]*\}", raw_text)
             if not match:
                 return cls._neutral_delta()
             try:
                 data = json.loads(match.group(0))
                 payload = data if isinstance(data, dict) else None
-            except Exception:
+            except Exception as inner_exc:
+                _log_async(
+                    logger.warning(
+                        "mood_parse_json_fragment_failed",
+                        "Mood model response fragment could not be parsed.",
+                        context={
+                            "raw_text_length": len(raw_text),
+                            "error_type": inner_exc.__class__.__name__,
+                            "error_message": str(inner_exc),
+                        },
+                    )
+                )
                 return cls._neutral_delta()
 
         if not payload:
+            _log_async(
+                logger.warning(
+                    "mood_parse_non_object",
+                    "Mood model response did not contain an object payload.",
+                    context={
+                        "raw_text_length": len(raw_text),
+                        "payload_type": type(data).__name__,
+                    },
+                )
+            )
             return cls._neutral_delta()
 
         parsed = cls._neutral_delta()

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.shared_types.models import OutboundMessage
+from src.shared_types.models import OutboundMessage, MessageSource
 
 
 @dataclass(slots=True)
 class ConsoleOutputAdapter:
     name: str = "console"
+    route_source: MessageSource = MessageSource.CONSOLE
 
     async def start(self) -> None:
         return

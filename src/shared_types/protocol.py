@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
-from src.shared_types.models import MessagesHistory, MoodState
+from src.shared_types.models import MessagesHistory, MoodState, MessageSource
 from langchain_core.messages import BaseMessage
 
 from src.shared_types.models import (
@@ -36,6 +36,7 @@ class InputAdapter(Protocol):
 @runtime_checkable
 class OutputAdapter(Protocol):
     name: str
+    route_source: MessageSource
 
     async def start(self) -> None: ...
 

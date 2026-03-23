@@ -34,10 +34,6 @@ class ReminderToolArgs(_InjectedStateArgs):
         min_length=1,
         description="Reminder text. If omitted, uses the latest user message.",
     )
-    target_user_id: str | None = Field(
-        default=None,
-        description="Optional explicit user id/chat id for delivery.",
-    )
 
 
 class UserDeviceToolArgs(_InjectedStateArgs):

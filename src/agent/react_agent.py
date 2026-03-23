@@ -17,7 +17,6 @@ def create_react_agent_graph(
     *,
     model: BaseChatModel,
     tools: list[BaseTool],
-    max_history_messages: int,
     timeout_seconds: int = 60,
 ) -> CompiledStateGraph:
     graph = StateGraph(AgentGraphState)

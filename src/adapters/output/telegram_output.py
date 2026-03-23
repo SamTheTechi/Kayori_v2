@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
+from src.logger import get_logger
 from src.shared_types.models import MessageSource, OutboundMessage
+
+logger = get_logger("output.telegram")
 
 
 @dataclass(slots=True)
@@ -12,6 +15,7 @@ class TelegramOutputAdapter:
     default_chat_id: str | None = None
 
     name: str = "telegram"
+    route_source: MessageSource = MessageSource.TELEGRAM
     max_chunk_len: int = 4000
     _acquired: bool = False
 
@@ -34,7 +38,15 @@ class TelegramOutputAdapter:
             message=message, default_chat_id=self.default_chat_id
         )
         if not chat_id:
-            print("[telegram-output] dropped message with no telegram route")
+            await logger.warning(
+                "telegram_output_dropped_no_route",
+                "Dropped outbound Telegram message because no route was resolved.",
+                context={
+                    "source": str(message.source),
+                    "channel_id": message.channel_id,
+                    "target_user_id": message.target_user_id,
+                },
+            )
             return
 
         chunks = _split_telegram_chunks(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.agent import ReactAgentService
+from src.agent.service import ReactAgentService
 from src.core.mood_engine import MoodEngine
 from src.logger import get_logger
 from src.shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
@@ -52,18 +52,23 @@ class AgentOrchestrator:
         )
 
         mood = await self.state_store.get_mood(thread_id)
-        messages = await self.state_store.get_window(thread_id, 16)
+        messages_for_agent = await self.state_store.get_window(thread_id, 16)
+        messages_for_mood_analysis = await self.state_store.get_window(thread_id, 6)
 
-        delta = await self.mood_engine.analyze(content)
+        delta = await self.mood_engine.analyze(
+            content=content,
+            messages=messages_for_mood_analysis,
+            thread_id=thread_id
+        )
         next_mood = self.mood_engine.apply(mood, delta)
 
         await self.state_store.set_mood(thread_id, next_mood)
 
         reply_text = await self.agent.respond(
             content=content,
-            messages=messages,
-            thread_id=thread_id,
+            messages=messages_for_agent,
             mood=next_mood,
+            envelope=envelope,
         )
 
         await self.state_store.append_messages(
@@ -92,6 +97,7 @@ class AgentOrchestrator:
                 },
                 error=exc,
             )
+
 
 def _build_outbound(envelope: MessageEnvelope, content: str) -> OutboundMessage:
     return OutboundMessage(

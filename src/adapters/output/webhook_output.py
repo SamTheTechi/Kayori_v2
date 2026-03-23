@@ -9,7 +9,10 @@ import httpx
 
 from src.adapters.audio import EdgeTtsAdapter
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
-from src.shared_types.models import OutboundMessage
+from src.logger import get_logger
+from src.shared_types.models import OutboundMessage, MessageSource
+
+logger = get_logger("output.webhook")
 
 
 @dataclass(slots=True)
@@ -20,6 +23,7 @@ class WebhookOutputAdapter:
     bearer_token: str | None = None
     timeout_seconds: float = 10.0
     name: str = "webhook"
+    route_source: MessageSource = MessageSource.WEBHOOK
 
     _client: httpx.AsyncClient | None = field(
         default=None, init=False, repr=False)
@@ -62,12 +66,23 @@ class WebhookOutputAdapter:
         )
         for url, result in zip(self.targets, results, strict=False):
             if isinstance(result, Exception):
-                print(f"[webhook-output] send failed for {url}: {result}")
+                await logger.exception(
+                    "webhook_output_send_failed",
+                    "Webhook output send failed.",
+                    context={
+                        "target_url": url,
+                    },
+                    error=result,
+                )
                 continue
             if result.status_code >= 400:
-                print(
-                    f"[webhook-output] target {
-                        url} returned status {result.status_code}"
+                await logger.warning(
+                    "webhook_output_target_http_error",
+                    "Webhook output target returned an error status.",
+                    context={
+                        "target_url": url,
+                        "status_code": result.status_code,
+                    },
                 )
 
     async def _capture_runtime_response(self, message: OutboundMessage) -> None:

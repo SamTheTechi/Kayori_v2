@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from src.logger import get_logger
-from src.shared_types.models import MessageSource, OutboundMessage
+from src.shared_types.models import OutboundMessage
 from src.shared_types.protocol import OutputAdapter
 from src.shared_types.types import OutputSinkMode
 
@@ -64,27 +64,9 @@ class OutputSink:
         if self.mode == "multi":
             return list(self.outputs)
 
-        source = message.source
-
-        if source == MessageSource.DISCORD:
-            source_name = "discord"
-        elif source == MessageSource.TELEGRAM:
-            source_name = "telegram"
-        elif source == MessageSource.CONSOLE:
-            source_name = "console"
-        elif source == MessageSource.WEBHOOK:
-            source_name = "webhook"
-        else:
-            source_name = None
-
-        if source_name is None:
-            return list(self.outputs)
-
-        matched = [output for output in self.outputs if output.name == source_name]
-        if matched:
-            return matched
-
-        return list(self.outputs)
+        return [
+            output for output in self.outputs if output.route_source == message.source
+        ]
 
 
 __all__ = ["OutputSink"]
