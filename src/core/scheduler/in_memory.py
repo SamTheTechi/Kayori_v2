@@ -21,8 +21,8 @@ class InMemorySchedulerBackend:
 
     async def push(self, trigger: Trigger) -> None:
         async with self._lock:
-            heapq.heappush(self._heap, (trigger.fire_at,
-                           trigger.trigger_id, trigger))
+            heapq.heappush(self._heap, (trigger._scheduled_for,
+                           trigger._trigger_id, trigger))
 
     async def pop_due(self, now: float) -> list[Trigger]:
         due: list[Trigger] = []
@@ -32,8 +32,8 @@ class InMemorySchedulerBackend:
                 suppress_until = self._suppressed.get(tid, 0)
                 if suppress_until > now:
                     # Still suppressed — push back to suppression end time
-                    trigger.fire_at = suppress_until
-                    heapq.heappush(self._heap, (trigger.fire_at, tid, trigger))
+                    trigger._scheduled_for = suppress_until
+                    heapq.heappush(self._heap, (trigger._scheduled_for, tid, trigger))
                     continue
                 due.append(trigger)
         return due

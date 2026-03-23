@@ -1,21 +1,15 @@
-from src.core.scheduler.backend_memory import InMemoryBackend
-from src.core.scheduler.scheduler import AgentScheduler, TaskScheduler
-from src.shared_types.types import (
-    FiredTrigger,
-    MissedPolicy,
-    Trigger,
-    TriggerType,
-)
+from src.core.scheduler.in_memory import InMemorySchedulerBackend
+from src.core.scheduler.redis import RedisSchedulerBackend
+from src.core.scheduler.scheduler import AgentScheduler
 from src.shared_types.protocol import SchedulerBackend
+from src.shared_types.types import Trigger, TriggerType
 
 
 __all__ = [
     "AgentScheduler",
-    "TaskScheduler",
     "Trigger",
-    "FiredTrigger",
     "TriggerType",
-    "MissedPolicy",
     "SchedulerBackend",
-    "InMemoryBackend",
+    "InMemorySchedulerBackend",
+    "RedisSchedulerBackend",
 ]

@@ -29,6 +29,7 @@ from src.core.outputsink import OutputSink
 from src.core.scheduler.in_memory import InMemorySchedulerBackend
 from src.core.scheduler.scheduler import AgentScheduler
 from src.logger import get_logger
+from src.shared_types.models import MessageSource
 from src.shared_types.protocol import InputAdapter, OutputAdapter
 from src.shared_types.types import Trigger, TriggerType
 from src.tools.calendar import CalendarTools
@@ -209,14 +210,11 @@ async def _main() -> None:
     try:
         await scheduler.push(
             Trigger(
-                trigger_type=TriggerType.PRECISE,
-                delay_seconds=60,
-                payload={
-                    "content": "Ping after one minute",
-                    "channel_id": "...",
-                    "target_user_id": "...",
-                    "metadata": {"kind": "reminder"},
-                },
+                trigger_type=TriggerType.LIFE,
+                source=MessageSource.LIFE,
+                content="Send a warm one-minute check-in message to the user.",
+                interval_seconds=10,
+                repeat=True
             )
         )
 

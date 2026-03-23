@@ -45,6 +45,10 @@ class AgentOrchestrator:
         if not content:
             return
 
+        if envelope.source.strip() == MessageSource.LIFE:
+            print(envelope.content)
+            return
+
         thread_id = resolve_thread_id(
             target_user_id=envelope.target_user_id,
             channel_id=envelope.channel_id,

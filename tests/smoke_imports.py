@@ -14,8 +14,10 @@ SRC_DIR = ROOT / "src"
 def module_name(path: Path) -> str:
     relative = path.relative_to(SRC_DIR)
     if relative.name == "__init__.py":
-        return ".".join(relative.parts[:-1])
-    return ".".join(relative.with_suffix("").parts)
+        parts = ("src",) + relative.parts[:-1]
+        return ".".join(parts)
+    parts = ("src",) + relative.with_suffix("").parts
+    return ".".join(parts)
 
 
 def iter_modules() -> list[str]:
@@ -30,7 +32,7 @@ def iter_modules() -> list[str]:
 
 
 def main() -> int:
-    sys.path.insert(0, str(SRC_DIR))
+    sys.path.insert(0, str(ROOT))
 
     failures: list[tuple[str, str]] = []
     for name in iter_modules():

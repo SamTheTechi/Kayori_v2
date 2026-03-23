@@ -60,10 +60,11 @@ See [Mood Engine](mood-engine.md) for the detailed reasoning and logic.
 
 Drives proactive behaviors:
 
-- **Fuzzy Scheduling** - Approximate timing with flexibility
-- **Precise Scheduling** - Exact timestamp-based execution
-- **Curiosity Triggers** - Self-driven exploration
-- **Mood Thresholds** - Actions triggered by mood changes
+- **Precise Triggers** - Fire after a fixed interval
+- **Fuzzy Triggers** - Fire with a random spread after the base interval
+- **Life Triggers** - Internal recurring tasks published with `MessageSource.LIFE`
+
+See [Scheduler](scheduler.md) for the current trigger model, examples, and tradeoffs.
 
 ### Output Sink
 

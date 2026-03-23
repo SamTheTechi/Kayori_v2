@@ -27,8 +27,8 @@ class RedisSchedulerBackend:
         pipe = self._client.pipeline()
         raw = json.dumps(trigger.to_dict(), separators=(
             ",", ":"), sort_keys=True)
-        pipe.set(_TRIGGER_PREFIX + trigger.trigger_id, raw)
-        pipe.zadd(_HEAP_KEY, {trigger.trigger_id: trigger.fire_at})
+        pipe.set(_TRIGGER_PREFIX + trigger._trigger_id, raw)
+        pipe.zadd(_HEAP_KEY, {trigger._trigger_id: trigger._scheduled_for})
         await pipe.execute()
 
     async def pop_due(self, now: float) -> list[Trigger]:
