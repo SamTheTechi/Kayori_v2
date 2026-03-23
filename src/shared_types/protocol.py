@@ -11,7 +11,6 @@ from src.shared_types.models import (
     OutboundMessage,
 )
 from src.shared_types.types import (
-    ScheduledTask,
     # ToolAuditEvent,
     Trigger,
 )
@@ -148,22 +147,6 @@ class SchedulerBackend(Protocol):
     async def restore(self) -> list[Trigger]: ...
 
 
-@runtime_checkable
-class SchedulerStore(Protocol):
-    async def enqueue(self, task: ScheduledTask) -> str: ...
-
-    async def pop_due(
-        self, *, now_ts: float, limit: int = 100
-    ) -> list[ScheduledTask]: ...
-
-    async def get(self, task_id: str) -> ScheduledTask | None: ...
-
-
-@runtime_checkable
-class TriggerSchedulerBackend(SchedulerBackend, Protocol):
-    async def push(self, trigger: Trigger) -> None: ...
-
-
 __all__ = [
     # "CompanionStateStore",
     # "GoalTaskBrain",
@@ -176,8 +159,6 @@ __all__ = [
     # "GraphMemoryStore",
     # "ProactiveKindStrategy",
     # "ProactiveMessagingPolicy",
-    "SchedulerStore",
     "StateStore",
     # "ToolAuditLogger",
-    "TriggerSchedulerBackend",
 ]

@@ -26,8 +26,11 @@ from src.agent.service import ReactAgentService
 from src.core.mood_engine import MoodEngine
 from src.core.orchestrator import AgentOrchestrator
 from src.core.outputsink import OutputSink
+from src.core.scheduler.in_memory import InMemorySchedulerBackend
+from src.core.scheduler.scheduler import AgentScheduler
 from src.logger import get_logger
 from src.shared_types.protocol import InputAdapter, OutputAdapter
+from src.shared_types.types import Trigger, TriggerType
 from src.tools.calendar import CalendarTools
 from src.tools.reminder import ReminderTool
 from src.tools.spotify import SpotifyTool
@@ -70,14 +73,23 @@ async def _main() -> None:
         bearer_token=webhook_bearer_token,
     )
 
-    bus = InMemoryMessageBus()
-    state = InMemoryStateStore()
-
     # redis_client = Redis.from_url()
     # bus = RedisMessageBus(redis_client),
     # state = RedisStateStore(redis_client),
 
-    webhook_tts = EdgeTtsAdapter(api_key=tts_api_key, base_url=tts_base_url)
+    bus = InMemoryMessageBus()
+    state = InMemoryStateStore()
+
+    scheduler_backend = InMemorySchedulerBackend()
+    scheduler = AgentScheduler(
+        backend=scheduler_backend,
+        bus=bus
+    )
+
+    webhook_tts = EdgeTtsAdapter(
+        api_key=tts_api_key,
+        base_url=tts_base_url
+    )
 
     # Output adapters.
     outputs: list[OutputAdapter] = []
@@ -152,11 +164,6 @@ async def _main() -> None:
         output=output_dispatcher,
     )
 
-    # scheduler = AgentScheduler.with_memory(
-    #     bus=bus,
-    #     state_store=state
-    # )
-
     # Input adapters.
     inputs: list[InputAdapter] = []
     for name in enabled_inputs:
@@ -197,59 +204,21 @@ async def _main() -> None:
 
     await output_dispatcher.start()
     await webhook_runtime.start()
-    # await scheduler.start()
+    await scheduler.start()
 
     try:
-        # now = time.time()
-        # local_now = datetime.now().astimezone()
-        # second_of_day = (
-        #     local_now.hour * 3600 + local_now.minute * 60 + local_now.second
-        # )
-        #
-        # # One trigger per scheduler mode for quick manual testing.
-        # demo_triggers = [
-        #     Trigger(
-        #         trigger_type=TriggerType.PRECISE,
-        #         fire_at=now + 5,
-        #         payload={
-        #             "message": "Scheduler demo ping.",
-        #             "metadata": {"kind": "scheduler_demo_precise"},
-        #         },
-        #     ),
-        #     Trigger(
-        #         trigger_type=TriggerType.FUZZY,
-        #         window_start_ts=now + 7,
-        #         window_end_ts=now + 12,
-        #         payload={
-        #             "message": "Fuzzy demo ping.",
-        #             "metadata": {"kind": "scheduler_demo_fuzzy"},
-        #         },
-        #     ),
-        #     Trigger(
-        #         trigger_type=TriggerType.MOOD,
-        #         mood_key="Calmness",
-        #         mood_threshold=0.4,
-        #         mood_direction="gte",
-        #         check_interval_sec=3,
-        #         payload={
-        #             "message": "Mood demo ping.",
-        #             "metadata": {"kind": "scheduler_demo_mood"},
-        #         },
-        #     ),
-        #     Trigger(
-        #         trigger_type=TriggerType.CURIOSITY,
-        #         allowed_window_start_sec=second_of_day + 9,
-        #         allowed_window_end_sec=second_of_day + 15,
-        #         target_slots_per_day=1,
-        #         payload={
-        #             "message": "Curiosity demo ping.",
-        #             "metadata": {"kind": "scheduler_demo_curiosity"},
-        #         },
-        #     ),
-        # ]
-        #
-        # for trigger in demo_triggers:
-        #     await scheduler.push(trigger)
+        await scheduler.push(
+            Trigger(
+                trigger_type=TriggerType.PRECISE,
+                delay_seconds=60,
+                payload={
+                    "content": "Ping after one minute",
+                    "channel_id": "...",
+                    "target_user_id": "...",
+                    "metadata": {"kind": "reminder"},
+                },
+            )
+        )
 
         for adapter in inputs:
             input_tasks.append(
@@ -272,11 +241,12 @@ async def _main() -> None:
 
         for task in input_tasks:
             task.cancel()
+
         await asyncio.gather(*input_tasks, return_exceptions=True)
         # await redis_client.shutdown()
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
-        # await scheduler.stop()
+        await scheduler.stop()
         await webhook_runtime.stop()
         await output_dispatcher.stop()
 

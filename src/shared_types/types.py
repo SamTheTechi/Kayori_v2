@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal,  TypedDict, Annotated
+from typing import Any, Literal, TypedDict, Annotated
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
@@ -20,46 +20,16 @@ class AgentGraphState(TypedDict, total=False):
     error_reason: str | None
 
 
-SchedulerMode = Literal["exact", "window"]
 OutputSinkMode = Literal["direct", "multi"]
-MoodDirection = Literal["gte", "lte"]
-
-
-class ScheduleRequest(TypedDict, total=False):
-    mode: SchedulerMode
-    content: str
-    source: MessageSource | str
-    target_user_id: str | None
-    channel_id: str | None
-    metadata: dict[str, Any]
-    run_at: str | float | int
-    window_start: str | float | int
-    window_end: str | float | int
-
-
-class ScheduledTask(TypedDict, total=False):
-    id: str
-    mode: SchedulerMode
-    due_ts: float
-    created_at: str
-    content: str
-    source: MessageSource | str
-    target_user_id: str | None
-    channel_id: str | None
-    metadata: dict[str, Any]
-
-
 class TriggerType(str, Enum):
     FUZZY = "fuzzy"
     PRECISE = "precise"
-    MOOD = "mood"
-    CURIOSITY = "curiosity"
+    LIFE = "life"
 
 
 class MissedPolicy(str, Enum):
     FIRE_IMMEDIATELY = "fire_immediately"
     SKIP_RESCHEDULE = "skip_reschedule"
-    RECHECK = "recheck"
 
 
 @dataclass(slots=True)
@@ -68,15 +38,12 @@ class Trigger:
     payload: dict[str, Any] = field(default_factory=dict)
     trigger_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     fire_at: float | None = None
+    delay_seconds: float | None = None
     repeat: bool = False
     repeat_interval_sec: float | None = None
-    check_interval_sec: float | None = None
     missed_policy: MissedPolicy = MissedPolicy.SKIP_RESCHEDULE
     window_start_ts: float | None = None
     window_end_ts: float | None = None
-    mood_key: str | None = None
-    mood_threshold: float | None = None
-    mood_direction: MoodDirection | None = None
     allowed_window_start_sec: float | None = None
     allowed_window_end_sec: float | None = None
     target_slots_per_day: int | None = None
@@ -89,15 +56,12 @@ class Trigger:
             "payload": self.payload,
             "trigger_id": self.trigger_id,
             "fire_at": self.fire_at,
+            "delay_seconds": self.delay_seconds,
             "repeat": self.repeat,
             "repeat_interval_sec": self.repeat_interval_sec,
-            "check_interval_sec": self.check_interval_sec,
             "missed_policy": self.missed_policy.value,
             "window_start_ts": self.window_start_ts,
             "window_end_ts": self.window_end_ts,
-            "mood_key": self.mood_key,
-            "mood_threshold": self.mood_threshold,
-            "mood_direction": self.mood_direction,
             "allowed_window_start_sec": self.allowed_window_start_sec,
             "allowed_window_end_sec": self.allowed_window_end_sec,
             "target_slots_per_day": self.target_slots_per_day,
@@ -112,19 +76,16 @@ class Trigger:
             payload=dict(data.get("payload") or {}),
             trigger_id=str(data.get("trigger_id") or uuid.uuid4()),
             fire_at=_optional_float(data.get("fire_at")),
+            delay_seconds=_optional_float(data.get("delay_seconds")),
             repeat=bool(data.get("repeat", False)),
             repeat_interval_sec=_optional_float(
                 data.get("repeat_interval_sec")),
-            check_interval_sec=_optional_float(data.get("check_interval_sec")),
             missed_policy=MissedPolicy(
                 str(data.get("missed_policy")
                     or MissedPolicy.SKIP_RESCHEDULE.value)
             ),
             window_start_ts=_optional_float(data.get("window_start_ts")),
             window_end_ts=_optional_float(data.get("window_end_ts")),
-            mood_key=_optional_str(data.get("mood_key")),
-            mood_threshold=_optional_float(data.get("mood_threshold")),
-            mood_direction=_optional_direction(data.get("mood_direction")),
             allowed_window_start_sec=_optional_float(
                 data.get("allowed_window_start_sec")
             ),
@@ -154,31 +115,11 @@ def _optional_int(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
-
-
-def _optional_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _optional_direction(value: Any) -> MoodDirection | None:
-    text = _optional_str(value)
-    if text not in {"gte", "lte"}:
-        return None
-    return text
-
-
 __all__ = [
     "AgentGraphState",
     "FiredTrigger",
     "MissedPolicy",
-    "MoodDirection",
     "OutputSinkMode",
-    "ScheduleRequest",
-    "ScheduledTask",
-    "SchedulerMode",
     "Trigger",
     "TriggerType",
 ]

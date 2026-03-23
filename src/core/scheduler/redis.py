@@ -12,7 +12,7 @@ _SUPPRESS_KEY = "scheduler:suppress"
 _TRIGGER_PREFIX = "scheduler:trigger:"
 
 
-class RedisBackend:
+class RedisSchedulerBackend:
     def __init__(
         self,
         redis_client: Redis,

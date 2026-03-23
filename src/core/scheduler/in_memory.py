@@ -6,7 +6,7 @@ import heapq
 from src.shared_types.types import Trigger
 
 
-class InMemoryBackend:
+class InMemorySchedulerBackend:
     """
     Pure in-memory scheduler backend backed by a min-heap.
 

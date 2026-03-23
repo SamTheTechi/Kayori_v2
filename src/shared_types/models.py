@@ -50,9 +50,8 @@ class MessageSource(StrEnum):
     CONSOLE = "console"
     WEBHOOK = "webhook"
 
-    REMINDER = "reminder"
     SCHEDULER = "scheduler"
-    INTERNAL = "internal"
+    LIFE = "life"
 
 
 @dataclass(slots=True)

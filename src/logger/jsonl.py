@@ -13,7 +13,7 @@ class JsonlLogger:
 
     def __init__(
         self,
-        path: str | Path = "logs/app.jsonl",
+        path: str | Path = "logs/app.json",
         *,
         enabled: bool = True,
         max_lines: int = 5000,
