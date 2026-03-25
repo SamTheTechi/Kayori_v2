@@ -16,7 +16,8 @@ It is useful for:
 - life-style background events.
 
 The scheduler itself does not generate the final user-facing reply. It publishes
-a `MessageEnvelope` into the bus, and the normal pipeline handles the rest.
+a `MessageEnvelope` into the bus, and the orchestrator decides what to do with
+that event.
 
 ## High-Level Flow
 
@@ -25,8 +26,7 @@ a `MessageEnvelope` into the bus, and the normal pipeline handles the rest.
 3. Start it.
 4. Push one or more `Trigger` objects.
 5. When a trigger fires, the scheduler publishes a `MessageEnvelope` to the bus.
-6. The orchestrator and agent pipeline handle that event like any other inbound
-   message source.
+6. The orchestrator routes that event by `MessageSource`.
 
 ## Trigger Model
 
@@ -37,10 +37,9 @@ Current trigger shape:
 class Trigger:
     trigger_type: TriggerType
     source: MessageSource
-    content: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-
     interval_seconds: float
+    content: str = "__internal__"
+    metadata: dict[str, Any] = field(default_factory=dict)
     repeat: bool = False
     fuzzy_seconds: float | None = None
 ```
@@ -50,11 +49,12 @@ What the fields mean:
 - `trigger_type`
   - `PRECISE`: fire after `interval_seconds`
   - `FUZZY`: fire after `interval_seconds` with a random spread
-  - `LIFE`: internal recurring task source
 - `source`
   - the `MessageSource` used when publishing to the bus
 - `content`
-  - the task text the agent will receive when the trigger fires
+  - the text published into the envelope
+  - defaults to `__internal__`, which is currently used for internal scheduled
+    events
 - `metadata`
   - optional extra structured context
 - `interval_seconds`
@@ -69,8 +69,8 @@ What the fields mean:
 ## Setup
 
 ```python
-from src.core.scheduler.in_memory import InMemorySchedulerBackend
-from src.core.scheduler.scheduler import AgentScheduler
+from src.adapters.scheduler.in_memory import InMemorySchedulerBackend
+from src.core.scheduler import AgentScheduler
 
 backend = InMemorySchedulerBackend()
 scheduler = AgentScheduler(backend=backend, bus=bus)
@@ -105,9 +105,8 @@ Meaning:
 ```python
 await scheduler.push(
     Trigger(
-        trigger_type=TriggerType.LIFE,
+        trigger_type=TriggerType.PRECISE,
         source=MessageSource.LIFE,
-        content="Reflect on recent conversations and update internal notes.",
         interval_seconds=21600,
         repeat=True,
     )
@@ -173,6 +172,33 @@ await scheduler.push(
 )
 ```
 
+### Inactivity-Based Compaction Timer
+
+The current runtime also uses the scheduler as an idle timer instead of only as
+a repeating job system.
+
+Pattern:
+
+```python
+await scheduler.remove(f"compact:{thread_id}")
+await scheduler.push(
+    Trigger(
+        trigger_type=TriggerType.PRECISE,
+        source=MessageSource.COMPACT,
+        interval_seconds=1800,
+        metadata={"thread_id": thread_id},
+        repeat=False,
+        _trigger_id=f"compact:{thread_id}",
+    )
+)
+```
+
+Meaning:
+
+- every chat turn removes the old compact timer
+- a new one-shot compact trigger is scheduled
+- compaction only fires after inactivity, not on a fixed repeating loop
+
 ## How It Works Internally
 
 - `push()` validates the trigger and computes the first scheduled fire time
@@ -198,7 +224,7 @@ This scheduler design is intentionally small, but that comes with tradeoffs.
 
 - simple public trigger API
 - same bus pipeline as normal messages
-- supports one-time, repeating, fuzzy, and life-style events
+- supports one-time, repeating, and fuzzy events
 - backend can be swapped between in-memory and Redis
 
 ### Limitations
@@ -206,12 +232,12 @@ This scheduler design is intentionally small, but that comes with tradeoffs.
 - first scheduling is relative-time based, not absolute wall-clock based
 - no direct route fields on the trigger itself
 - no custom in-process callback system anymore
-- final behavior still depends on how the orchestrator handles
-  `MessageSource.SCHEDULER` and `MessageSource.LIFE`
+- internal runtime actions still travel through `MessageEnvelope`
+- final behavior still depends on how the orchestrator handles each source
 
 ## Operational Notes
 
 - invalid triggers are rejected and logged; they do not crash the server
 - if the scheduler has no bus, the trigger is logged as unhandled
-- `LIFE` triggers must use `source=MessageSource.LIFE`
+- empty trigger content is dropped before publish
 - `FUZZY` triggers must provide `fuzzy_seconds`

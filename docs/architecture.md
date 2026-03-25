@@ -43,7 +43,6 @@ LangGraph ReAct agent that:
 
 - **Short-Term Memory** - In-memory conversation history per thread
 - **Episodic Memory** - Long-term memory via Pinecone vector database
-- **Graph Memory** - Knowledge graph via Neo4j for structured relationships
 
 ### Mood Engine
 

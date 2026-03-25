@@ -10,8 +10,10 @@ from src.shared_types.models import (
 )
 from src.shared_types.thread_identity import resolve_thread_id
 from src.shared_types.protocol import (
+    EpisodicMemoryBackend,
+    EpisodicMemoryBackendRecord,
+    EpisodicMemorySearchResult,
     EpisodicMemoryStore,
-    # GraphMemoryStore,
     InputAdapter,
     MessageBus,
     OutputAdapter,
@@ -50,8 +52,10 @@ __all__ = [
     "OutputAdapter",
     "StateStore",
     # "ToolAuditLogger",
+    "EpisodicMemoryBackend",
+    "EpisodicMemoryBackendRecord",
+    "EpisodicMemorySearchResult",
     "EpisodicMemoryStore",
-    "GraphMemoryStore",
 
     # Types
     "AgentGraphState",

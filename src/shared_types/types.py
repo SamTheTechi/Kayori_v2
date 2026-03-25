@@ -15,6 +15,7 @@ class AgentGraphState(TypedDict, total=False):
     content: str
     messages: Annotated[list[BaseMessage], add_messages]
     mood: MoodState | None
+    episodic: list[dict[str, Any]]
     envelope: MessageEnvelope
     reply_text: str
     error_reason: str | None
@@ -26,15 +27,14 @@ OutputSinkMode = Literal["direct", "multi"]
 class TriggerType(str, Enum):
     FUZZY = "fuzzy"
     PRECISE = "precise"
-    LIFE = "life"
 
 
 @dataclass(slots=True)
 class Trigger:
     trigger_type: TriggerType
     source: MessageSource
-    content: str
     interval_seconds: float
+    content: str = "__internal__"
     metadata: dict[str, Any] = field(default_factory=dict)
     repeat: bool = False
     fuzzy_seconds: float | None = None
@@ -67,10 +67,14 @@ class Trigger:
             _trigger_id=str(data.get("_trigger_id") or uuid4().hex),
             _scheduled_for=_optional_float(data.get("_scheduled_for")),
         )
+
+
 def _optional_float(value: Any) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
 __all__ = [
     "AgentGraphState",
     "OutputSinkMode",

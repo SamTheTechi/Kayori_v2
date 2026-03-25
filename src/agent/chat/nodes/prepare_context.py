@@ -17,6 +17,7 @@ def build_prepare_context_node():
             return {"reply_text": "", "messages": []}
 
         history = list(state.get("messages") or [])
+        episodic = _format_episodic(list(state.get("episodic") or []))
         messages: list[BaseMessage] = [*history, HumanMessage(content=content)]
         mood_values = _all_mood_values(state.get("mood"))
         current_time = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -24,6 +25,7 @@ def build_prepare_context_node():
         try:
             formatted_messages = private_template.format_messages(
                 messages=messages,
+                episodic=episodic,
                 current_time=current_time,
                 **mood_values,
             )
@@ -44,3 +46,18 @@ def _all_mood_values(mood: MoodState | None) -> dict[str, float]:
         emotion: float(values.get(emotion, MOOD_NEUTRAL))
         for emotion in EMOTIONS
     }
+
+
+def _format_episodic(records: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for record in records[:5]:
+        fact = str(record.get("fact") or "").strip()
+        context = str(record.get("context") or "").strip()
+        if not fact:
+            continue
+
+        lines.append(f"- {fact}")
+        if context:
+            lines.append(f"  context: {context}")
+
+    return "\n".join(lines) if lines else "None."

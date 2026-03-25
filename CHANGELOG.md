@@ -7,37 +7,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
-- Initial open-source release with restructured package layout
-- `src/` package structure for proper Python packaging
-- GitHub Actions workflows for CI/CD
-- Documentation scaffolding with mkdocs
-- Import smoke check for local module resolution
-- Pre-commit hooks for code quality
-- CONTRIBUTING.md, CODE_OF_CONDUCT.md, and SECURITY.md
+- Dedicated core services for episodic memory and conversation contraction
+- Episodic memory backends for in-memory, Pinecone, and Redis storage
+- Inactivity-based conversation compaction with summary rewriting and fact extraction
+- Agent-side episodic recall injection through graph state and prompt context
+- New core-service docs for orchestrator, episodic memory, conversation contraction, and output sink
+- MkDocs navigation for the expanded core-service documentation set
 
 ### Changed
-- Moved all source code to `src/` and properly formatted the codebase
+- Refactored episodic memory into a backend-driven core service instead of provider-specific wiring
+- Moved scheduler backends into `src/adapters/scheduler/` and kept `src/core/scheduler.py` focused on scheduling logic
+- Simplified orchestrator routing by separating chat, LIFE, and scheduled compaction paths
+- Updated prompt/context preparation so recalled episodic memories are available to the agent as distilled context
+- Reworked scheduler usage toward explicit backend injection and inactivity-driven compaction scheduling
+- Refreshed README and core docs to match the current architecture and runtime behavior
 
-### Added
-- Async, adapter-based AI companion architecture
-- LangGraph ReAct agent integration
-- Platform adapters: Discord, Telegram, Console, Webhook
-- Input/Output adapter pattern with message bus
-- Agent orchestrator for message handling
-- Mood system (foundational)
-- Tool implementations: Weather, Reminder, Spotify, Tavily Search
-- Audio pipeline with STT/TTS support
-- Tool audit logging
-- Circuit breaker pattern for external APIs
-- In-memory state store and message bus
-- Webhook REST API with authentication
+### Removed
+- Graph memory / Neo4j-related runtime pieces
+- Old Pinecone-specific episodic memory coupling from the memory core
+- Obsolete scheduler package layout under `src/core/scheduler/`
 
 ### Technical Details
-- Python 3.14+
-- LangGraph for agent orchestration
-- FastAPI for webhook runtime
-- discord.py for Discord integration
-- python-telegram-bot for Telegram integration
+- Python requirement aligned to `>=3.13,<3.14`
+- Local FastEmbed embeddings added for episodic memory backends
+- Scheduler trigger defaults now support internal runtime triggers more cleanly
+- Documentation links now point to the GitHub repository instead of local filesystem paths
 
 ---
 

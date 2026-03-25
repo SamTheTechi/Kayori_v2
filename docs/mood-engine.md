@@ -10,11 +10,11 @@ The mood engine gives the assistant a small internal emotional state that change
 - more reactive than a stateless assistant
 - capable of forming a slow-changing relationship layer
 
-The design is intentionally split into short-term emotions and long-term emotions.
+The design is intentionally split into fast emotions and long emotions.
 
 ## Emotion Model
 
-The engine uses the shared emotion definitions from [`src/shared_types/models.py`](/home/Asuna/Projects/macro/kayori/kayori_agent/src/shared_types/models.py).
+The engine uses the shared emotion definitions from [`src/shared_types/models.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/shared_types/models.py).
 
 Fast emotions:
 
@@ -33,6 +33,12 @@ Long emotions:
 - `Confidence`
 
 All emotions are stored in `MoodState` and are clamped to the range `0.0..1.0`, with `0.5` as neutral.
+
+Current total:
+
+- 7 fast emotions
+- 3 long emotions
+- 10 stored emotion values overall
 
 Why this split exists:
 
@@ -59,7 +65,7 @@ Keeping them separate makes the system easier to test and reason about. A user m
 
 ## Why The Classifier Only Predicts Fast Emotions
 
-The classifier template in [`src/templates/mood_classifier_template.py`](/home/Asuna/Projects/macro/kayori/kayori_agent/src/templates/mood_classifier_template.py) emits only fast-emotion keys.
+The classifier template in [`src/templates/mood_classifier_template.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/templates/mood_classifier_template.py) emits only fast-emotion keys.
 
 That is intentional.
 
@@ -73,7 +79,7 @@ Long emotions are not supposed to jump directly because of one message. They sho
 
 ## The Apply Step
 
-`apply()` in [`src/core/mood_engine.py`](/home/Asuna/Projects/macro/kayori/kayori_agent/src/core/mood_engine.py) runs in two passes.
+`apply()` in [`src/core/mood_engine.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/mood_engine.py) runs in two passes.
 
 ### Pass 1: Direct Fast-Emotion Update
 
@@ -149,6 +155,19 @@ The current intent behind that scaling is:
 This design keeps the relationship layer present without making it twitchy.
 
 Note: if you want strict "build slow, break fast" behavior later, the current implementation can be tightened so only positive reinforcement gets scaled while negative conflict remains full-strength. The current code uses one shared scale for long targets.
+
+## Runtime Use Today
+
+The orchestrator currently uses the mood engine in a very narrow way:
+
+1. load current `MoodState` from the state store
+2. call `analyze(...)` on the latest user message plus a short recent window
+3. call `apply(...)`
+4. write the updated mood back into the state store
+
+In other words, the current runtime uses the perception and transition steps on
+every chat turn. The passive helpers below still exist, but they are not the
+main path in the orchestrator today.
 
 ## Drift
 
@@ -258,6 +277,11 @@ What this design optimizes for:
 - simple enough to tune by hand
 - expressive enough to make behavior feel continuous
 - separate immediate reaction from long-term bond
+
+## File Reference
+
+The implementation described here lives in
+[`src/core/mood_engine.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/mood_engine.py).
 - keep state bounded and deterministic
 
 What this design intentionally does not try to do:

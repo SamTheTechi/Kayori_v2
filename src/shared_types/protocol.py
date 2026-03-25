@@ -78,11 +78,6 @@ class StateStore(Protocol):
 #         ...
 
 
-# @runtime_checkable
-# class ToolAuditLogger(Protocol):
-#     async def log_tool_event(self, event: ToolAuditEvent) -> None: ...
-
-
 @runtime_checkable
 class EpisodicMemoryStore(Protocol):
     async def remember(
@@ -108,27 +103,69 @@ class EpisodicMemoryStore(Protocol):
     async def compact(self, *, max_episodes: int | None = None) -> int: ...
 
 
-# @runtime_checkable
-# class GraphMemoryStore(Protocol):
-#     async def remember(
-#         self,
-#         *,
-#         subject: str,
-#         predicate: str,
-#         obj: str,
-#         source: str,
-#         confidence: float = 0.8,
-#     ) -> Any: ...
-#
-#     async def recall(
-#         self,
-#         *,
-#         entity: str | None = None,
-#         predicate: str | None = None,
-#         limit: int = 10,
-#     ) -> list[Any]: ...
-#
-#     async def close(self) -> None: ...
+class EpisodicMemoryBackendRecord:
+    def __init__(
+        self,
+        *,
+        id: str,
+        content: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.id = id
+        self.content = content
+        self.metadata = dict(metadata or {})
+
+
+class EpisodicMemorySearchResult:
+    def __init__(
+        self,
+        *,
+        record: EpisodicMemoryBackendRecord,
+        backend_score: float,
+    ) -> None:
+        self.record = record
+        self.backend_score = float(backend_score)
+
+
+@runtime_checkable
+class EpisodicMemoryBackend(Protocol):
+    async def upsert(
+        self,
+        *,
+        record_id: str,
+        content: str,
+        metadata: dict[str, Any],
+        namespace: str | None = None,
+    ) -> None: ...
+
+    async def search(
+        self,
+        *,
+        query: str,
+        limit: int,
+        namespace: str | None = None,
+    ) -> list[EpisodicMemorySearchResult]: ...
+
+    async def list_ids(
+        self,
+        *,
+        namespace: str | None = None,
+    ) -> list[str]: ...
+
+    async def fetch_records(
+        self,
+        *,
+        ids: list[str],
+        namespace: str | None = None,
+    ) -> list[EpisodicMemoryBackendRecord]: ...
+
+    async def delete(
+        self,
+        *,
+        ids: list[str],
+        namespace: str | None = None,
+    ) -> None: ...
+
 
 @runtime_checkable
 class SchedulerBackend(Protocol):
@@ -155,8 +192,10 @@ __all__ = [
     # "MemoryConsolidator",
     "MessageBus",
     "OutputAdapter",
+    "EpisodicMemoryBackend",
+    "EpisodicMemoryBackendRecord",
+    "EpisodicMemorySearchResult",
     "EpisodicMemoryStore",
-    # "GraphMemoryStore",
     # "ProactiveKindStrategy",
     # "ProactiveMessagingPolicy",
     "StateStore",

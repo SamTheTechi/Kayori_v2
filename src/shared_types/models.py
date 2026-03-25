@@ -50,6 +50,7 @@ class MessageSource(StrEnum):
     CONSOLE = "console"
     WEBHOOK = "webhook"
 
+    COMPACT = "compact"
     SCHEDULER = "scheduler"
     LIFE = "life"
 

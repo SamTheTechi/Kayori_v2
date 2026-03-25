@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
 from langchain_groq import ChatGroq
+from langchain_community.embeddings import FastEmbedEmbeddings
 
 # from redis.asyncio import Redis
 
@@ -22,12 +23,15 @@ from src.adapters.runtime.discord_runtime import DiscordRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
 from src.adapters.state.in_memory import InMemoryStateStore
-from src.agent.service import ReactAgentService
+from src.adapters.memory.in_memory import InMemoryEpisodicMemory
+from src.agent.chat.service import ReactAgentService
 from src.core.mood_engine import MoodEngine
+from src.core.episodic_memory import EpisodicMemoryStore
 from src.core.orchestrator import AgentOrchestrator
 from src.core.outputsink import OutputSink
-from src.core.scheduler.in_memory import InMemorySchedulerBackend
-from src.core.scheduler.scheduler import AgentScheduler
+from src.core.conversation_contraction import ConversationContractionService
+from src.adapters.scheduler.in_memory import InMemorySchedulerBackend
+from src.core.scheduler import AgentScheduler
 from src.logger import get_logger
 from src.shared_types.models import MessageSource
 from src.shared_types.protocol import InputAdapter, OutputAdapter
@@ -81,6 +85,13 @@ async def _main() -> None:
     bus = InMemoryMessageBus()
     state = InMemoryStateStore()
 
+    embedding_model = FastEmbedEmbeddings(
+        model_name="BAAI/bge-small-en-v1.5"
+    )
+
+    memory_backend = InMemoryEpisodicMemory(embedding=embedding_model)
+    episodic_memory = EpisodicMemoryStore(backend=memory_backend)
+
     scheduler_backend = InMemorySchedulerBackend()
     scheduler = AgentScheduler(
         backend=scheduler_backend,
@@ -93,37 +104,17 @@ async def _main() -> None:
     )
 
     # Output adapters.
-    outputs: list[OutputAdapter] = []
-    for name in enabled_outputs:
-        if name == "console":
-            outputs.append(ConsoleOutputAdapter())
-        elif name == "discord":
-            outputs.append(
-                DiscordOutputAdapter(
-                    runtime=discord_runtime,
-                    default_channel_id=None,
-                    default_user_id=discord_output_user_id,
-                )
-            )
-        elif name == "telegram":
-            outputs.append(
-                TelegramOutputAdapter(
-                    runtime=telegram_runtime,
-                    default_chat_id=telegram_output_chat_id,
-                )
-            )
-        elif name == "webhook":
-            outputs.append(
-                WebhookOutputAdapter(
-                    targets=webhook_output_targets,
-                    runtime=webhook_runtime,
-                    tts=webhook_tts,
-                    bearer_token=webhook_output_token,
-                )
-            )
-
-    if not outputs:
-        raise RuntimeError("At least one output adapter must be enabled.")
+    outputs = _build_outputs(
+        enabled_outputs=enabled_outputs,
+        discord_runtime=discord_runtime,
+        discord_output_user_id=discord_output_user_id,
+        telegram_runtime=telegram_runtime,
+        telegram_output_chat_id=telegram_output_chat_id,
+        webhook_runtime=webhook_runtime,
+        webhook_tts=webhook_tts,
+        webhook_output_targets=webhook_output_targets,
+        webhook_output_token=webhook_output_token,
+    )
 
     output_dispatcher = OutputSink(outputs=outputs, mode="direct")
 
@@ -157,41 +148,30 @@ async def _main() -> None:
         model=chat_model2,
     )
 
+    conversation_contraction = ConversationContractionService(
+        model=chat_model2,
+    )
+
     orchestrator = AgentOrchestrator(
+        agent=agent,
         bus=bus,
         state_store=state,
-        agent=agent,
         mood_engine=mood_engine,
+        episodic_memory=episodic_memory,
+        conversation_contraction=conversation_contraction,
+        scheduler=scheduler,
         output=output_dispatcher,
     )
 
     # Input adapters.
-    inputs: list[InputAdapter] = []
-    for name in enabled_inputs:
-        if name == "console":
-            inputs.append(ConsoleInputGateway(bus=bus))
-        elif name == "discord":
-            inputs.append(DiscordInputAdapter(
-                runtime=discord_runtime, bus=bus))
-        elif name == "telegram":
-            inputs.append(
-                TelegramInputAdapter(
-                    runtime=telegram_runtime,
-                    bus=bus,
-                    allowed_chat_ids=None,
-                )
-            )
-        elif name == "webhook":
-            inputs.append(
-                WebhookInputAdapter(
-                    runtime=webhook_runtime,
-                    bus=bus,
-                    stt=WhisperSttAdapter(api_key=groq_api_key),
-                )
-            )
-
-    if not inputs:
-        raise RuntimeError("At least one input adapter must be enabled.")
+    inputs = _build_inputs(
+        enabled_inputs=enabled_inputs,
+        bus=bus,
+        discord_runtime=discord_runtime,
+        telegram_runtime=telegram_runtime,
+        webhook_runtime=webhook_runtime,
+        groq_api_key=groq_api_key,
+    )
 
     for adapter in inputs:
         if isinstance(adapter, WebhookInputAdapter):
@@ -210,7 +190,7 @@ async def _main() -> None:
     try:
         await scheduler.push(
             Trigger(
-                trigger_type=TriggerType.LIFE,
+                trigger_type=TriggerType.PRECISE,
                 source=MessageSource.LIFE,
                 content="Send a warm one-minute check-in message to the user.",
                 interval_seconds=10,
@@ -247,6 +227,92 @@ async def _main() -> None:
         await scheduler.stop()
         await webhook_runtime.stop()
         await output_dispatcher.stop()
+
+
+def _build_outputs(
+    *,
+    enabled_outputs: list[str],
+    discord_runtime: DiscordRuntime,
+    discord_output_user_id: str,
+    telegram_runtime: TelegramRuntime,
+    telegram_output_chat_id: str,
+    webhook_runtime: WebhookRuntime,
+    webhook_tts: EdgeTtsAdapter,
+    webhook_output_targets: list[str],
+    webhook_output_token: str | None,
+) -> list[OutputAdapter]:
+    outputs: list[OutputAdapter] = []
+    for name in enabled_outputs:
+        if name == "console":
+            outputs.append(ConsoleOutputAdapter())
+        elif name == "discord":
+            outputs.append(
+                DiscordOutputAdapter(
+                    runtime=discord_runtime,
+                    default_channel_id=None,
+                    default_user_id=discord_output_user_id,
+                )
+            )
+        elif name == "telegram":
+            outputs.append(
+                TelegramOutputAdapter(
+                    runtime=telegram_runtime,
+                    default_chat_id=telegram_output_chat_id,
+                )
+            )
+        elif name == "webhook":
+            outputs.append(
+                WebhookOutputAdapter(
+                    targets=webhook_output_targets,
+                    runtime=webhook_runtime,
+                    tts=webhook_tts,
+                    bearer_token=webhook_output_token,
+                )
+            )
+
+    if not outputs:
+        raise RuntimeError("At least one output adapter must be enabled.")
+
+    return outputs
+
+
+def _build_inputs(
+    *,
+    enabled_inputs: list[str],
+    bus: InMemoryMessageBus,
+    discord_runtime: DiscordRuntime,
+    telegram_runtime: TelegramRuntime,
+    webhook_runtime: WebhookRuntime,
+    groq_api_key: str,
+) -> list[InputAdapter]:
+    inputs: list[InputAdapter] = []
+    for name in enabled_inputs:
+        if name == "console":
+            inputs.append(ConsoleInputGateway(bus=bus))
+        elif name == "discord":
+            inputs.append(DiscordInputAdapter(
+                runtime=discord_runtime, bus=bus))
+        elif name == "telegram":
+            inputs.append(
+                TelegramInputAdapter(
+                    runtime=telegram_runtime,
+                    bus=bus,
+                    allowed_chat_ids=None,
+                )
+            )
+        elif name == "webhook":
+            inputs.append(
+                WebhookInputAdapter(
+                    runtime=webhook_runtime,
+                    bus=bus,
+                    stt=WhisperSttAdapter(api_key=groq_api_key),
+                )
+            )
+
+    if not inputs:
+        raise RuntimeError("At least one input adapter must be enabled.")
+
+    return inputs
 
 
 def main() -> None:

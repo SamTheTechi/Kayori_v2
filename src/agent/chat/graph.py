@@ -7,9 +7,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
-from src.agent.nodes.call_model import build_call_model_node
-from src.agent.nodes.postprocess import build_postprocess_node
-from src.agent.nodes.prepare_context import build_prepare_context_node
+from src.agent.chat.nodes.call_model import build_call_model_node
+from src.agent.chat.nodes.postprocess import build_postprocess_node
+from src.agent.chat.nodes.prepare_context import build_prepare_context_node
 from src.shared_types.types import AgentGraphState
 
 

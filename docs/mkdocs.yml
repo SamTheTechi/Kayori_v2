@@ -32,6 +32,10 @@ nav:
   - Architecture: architecture.md
   - Scheduler: scheduler.md
   - MoodEngine: mood-engine.md
+  - Orchestrator: orchestrator.md
+  - Episodic Memory: episodic-memory.md
+  - Conversation Contraction: conversation-contraction.md
+  - Output Sink: output-sink.md
 
 plugins:
   - search

@@ -6,11 +6,11 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import BaseTool
 
-from src.agent.react_agent import create_react_agent_graph
+from src.agent.chat.graph import create_react_agent_graph
 from src.logger import get_logger
 from src.shared_types.models import MessageEnvelope, MoodState
 
-logger = get_logger("agent.service")
+logger = get_logger("agent.chat.service")
 
 
 class ReactAgentService:
@@ -39,6 +39,7 @@ class ReactAgentService:
         content: str,
         messages: list[BaseMessage] | None = None,
         mood: MoodState | None = None,
+        episodic: list[dict[str, Any]] | None = None,
         envelope: MessageEnvelope,
     ) -> str:
         text = (content or "").strip()
@@ -49,6 +50,7 @@ class ReactAgentService:
             "content": text,
             "messages": messages,
             "mood": mood,
+            "episodic": list(episodic or []),
             "envelope": envelope,
         }
 

@@ -2,30 +2,63 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.agent.service import ReactAgentService
+from langchain_core.messages import AIMessage, HumanMessage
+
+from src.agent.chat.service import ReactAgentService
+from src.core.conversation_contraction import ConversationContractionService
 from src.core.mood_engine import MoodEngine
+from src.core.scheduler import AgentScheduler
 from src.logger import get_logger
+from src.shared_types.protocol import (
+    EpisodicMemoryStore,
+    MessageBus,
+    OutputAdapter,
+    StateStore,
+)
 from src.shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
+from src.shared_types.types import Trigger, TriggerType
 from src.shared_types.thread_identity import resolve_thread_id
-from src.shared_types.protocol import MessageBus, OutputAdapter, StateStore
-from langchain_core.messages import HumanMessage, AIMessage
 
 logger = get_logger("core.orchestrator")
+
+AGENT_WINDOW = 12
+MOOD_WINDOW = 4
+COMPACT_IDLE_SECONDS = 60 * 30
+COMPACT_TRIGGER_PREFIX = "compact:"
 
 
 @dataclass(slots=True)
 class AgentOrchestrator:
+    agent: ReactAgentService
+    bus: MessageBus
     state_store: StateStore
     mood_engine: MoodEngine
-    agent: ReactAgentService
+    episodic_memory: EpisodicMemoryStore
+    scheduler: AgentScheduler
+    conversation_contraction: ConversationContractionService
     output: OutputAdapter
-    bus: MessageBus
 
     async def run(self) -> None:
         while True:
             envelope: MessageEnvelope = await self.bus.consume()
             try:
-                await self._handle_envelope(envelope)
+                # Resolve the conversation thread once, then route by source.
+                thread_id = resolve_thread_id(
+                    target_user_id=envelope.target_user_id,
+                    channel_id=envelope.channel_id,
+                    author_id=envelope.author_id,
+                )
+
+                if envelope.source == MessageSource.LIFE:
+                    await self._handle_life(envelope, thread_id)
+                    continue
+
+                if envelope.source == MessageSource.COMPACT:
+                    await self._handle_compact(envelope, thread_id)
+                    continue
+
+                await self._handle_chat(envelope, thread_id)
+
             except Exception as exc:
                 await logger.exception(
                     "orchestrator_envelope_failed",
@@ -40,25 +73,31 @@ class AgentOrchestrator:
                     error=exc,
                 )
 
-    async def _handle_envelope(self, envelope: MessageEnvelope) -> None:
+    async def _handle_life(self, envelope: MessageEnvelope, thread_id: str) -> None:
+        content = (envelope.content or "").strip()
+        print(content)
+        return
+
+    # Scheduled compaction bypasses the chat-turn threshold gate.
+    async def _handle_compact(self, envelope: MessageEnvelope, thread_id: str) -> None:
+
+        await self.conversation_contraction.compact(
+            thread_id=thread_id,
+            state_store=self.state_store,
+            episodic_memory=self.episodic_memory,
+        )
+
+    async def _handle_chat(self, envelope: MessageEnvelope, thread_id: str) -> None:
         content = (envelope.content or "").strip()
         if not content:
             return
 
-        if envelope.source.strip() == MessageSource.LIFE:
-            print(envelope.content)
-            return
-
-        thread_id = resolve_thread_id(
-            target_user_id=envelope.target_user_id,
-            channel_id=envelope.channel_id,
-            author_id=envelope.author_id,
-        )
-
+        # Build the short-term context used for mood analysis and reply generation.
         mood = await self.state_store.get_mood(thread_id)
-        messages_for_agent = await self.state_store.get_window(thread_id, 16)
-        messages_for_mood_analysis = await self.state_store.get_window(thread_id, 6)
+        messages_for_agent = await self.state_store.get_window(thread_id, AGENT_WINDOW)
+        messages_for_mood_analysis = await self.state_store.get_window(thread_id, MOOD_WINDOW)
 
+        # Update live mood state before generating the reply.
         delta = await self.mood_engine.analyze(
             content=content,
             messages=messages_for_mood_analysis,
@@ -68,13 +107,19 @@ class AgentOrchestrator:
 
         await self.state_store.set_mood(thread_id, next_mood)
 
+        # Recall a small number of long-term facts relevant to this turn.
+        facts = await self.episodic_memory.recall(query=content, limit=2)
+
+        # LLM call
         reply_text = await self.agent.respond(
             content=content,
             messages=messages_for_agent,
+            episodic=facts,
             mood=next_mood,
             envelope=envelope,
         )
 
+        # Persist the raw turn before any later compaction happens.
         await self.state_store.append_messages(
             thread_id,
             [
@@ -83,12 +128,32 @@ class AgentOrchestrator:
             ]
         )
 
-        content = (reply_text or "").strip()
-        if not content and envelope.source != MessageSource.WEBHOOK:
+        # Reset the idle compact timer so history compresses only after inactivity.
+        await self._reschedule_compact_trigger(thread_id)
+
+        try:
+            # Opportunistic compaction keeps history under the active threshold.
+            await self.conversation_contraction.maybe_compact(
+                thread_id=thread_id,
+                state_store=self.state_store,
+                episodic_memory=self.episodic_memory,
+            )
+        except Exception as exc:
+            await logger.exception(
+                "orchestrator_contraction_failed",
+                "Conversation compaction failed.",
+                context={
+                    "thread_id": thread_id,
+                },
+                error=exc,
+            )
+
+        reply_text = (reply_text or "").strip()
+        if not reply_text and envelope.source != MessageSource.WEBHOOK:
             return None
 
         try:
-            await self.output.send(_build_outbound(envelope, content))
+            await self.output.send(self._build_outbound(envelope, reply_text))
         except Exception as exc:
             await logger.exception(
                 "orchestrator_output_send_failed",
@@ -102,18 +167,33 @@ class AgentOrchestrator:
                 error=exc,
             )
 
+    async def _reschedule_compact_trigger(self, thread_id: str) -> None:
+        # One pending trigger per thread gives "compact after inactivity" behavior.
+        trigger_id = f"{COMPACT_TRIGGER_PREFIX}{thread_id}"
+        await self.scheduler.remove(trigger_id)
+        await self.scheduler.push(
+            Trigger(
+                trigger_type=TriggerType.PRECISE,
+                source=MessageSource.COMPACT,
+                interval_seconds=COMPACT_IDLE_SECONDS,
+                metadata={"thread_id": thread_id},
+                repeat=False,
+                _trigger_id=trigger_id,
+            )
+        )
 
-def _build_outbound(envelope: MessageEnvelope, content: str) -> OutboundMessage:
-    return OutboundMessage(
-        source=envelope.source,
-        content=content,
-        channel_id=envelope.channel_id,
-        target_user_id=envelope.target_user_id,
-        metadata={
-            **dict(envelope.metadata or {}),
-            "webhook_envelope_id": envelope.id,
-        },
-        reply_to_message_id=envelope.message_id,
-        mention_author=bool(
-            envelope.channel_id and not envelope.target_user_id),
-    )
+    @staticmethod
+    def _build_outbound(envelope: MessageEnvelope, content: str) -> OutboundMessage:
+        return OutboundMessage(
+            source=envelope.source,
+            content=content,
+            channel_id=envelope.channel_id,
+            target_user_id=envelope.target_user_id,
+            metadata={
+                **dict(envelope.metadata or {}),
+                "webhook_envelope_id": envelope.id,
+            },
+            reply_to_message_id=envelope.message_id,
+            mention_author=bool(
+                envelope.channel_id and not envelope.target_user_id),
+        )

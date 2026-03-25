@@ -10,7 +10,7 @@ from src.logger import get_logger
 from src.shared_types.types import AgentGraphState
 
 FALLBACK_TEXT = "I hit a temporary issue contacting the model. Please try again."
-logger = get_logger("agent.call_model")
+logger = get_logger("agent.chat.call_model")
 
 
 def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):

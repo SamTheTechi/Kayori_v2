@@ -5,7 +5,7 @@ import random
 import time
 
 from src.logger import get_logger
-from src.shared_types.models import MessageEnvelope, MessageSource
+from src.shared_types.models import MessageEnvelope
 from src.shared_types.protocol import MessageBus, SchedulerBackend
 from src.shared_types.types import Trigger, TriggerType
 
@@ -185,10 +185,6 @@ def _compute_repeat_fire_at(trigger: Trigger) -> float | None:
 
 
 def _validate_trigger(trigger: Trigger) -> None:
-    if trigger.source == MessageSource.LIFE and trigger.trigger_type != TriggerType.LIFE:
-        raise ValueError("source=life requires trigger_type=life")
-    if trigger.trigger_type == TriggerType.LIFE and trigger.source != MessageSource.LIFE:
-        raise ValueError("life triggers must use source=life")
     if trigger.interval_seconds < 0:
         raise ValueError("interval_seconds must be non-negative")
     if trigger.repeat and trigger.interval_seconds <= 0:

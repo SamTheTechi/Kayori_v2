@@ -8,16 +8,16 @@ Kayori is an intelligent conversational agent that connects to multiple platform
 
 - **Natural Conversations** - ReAct-based reasoning with context-aware responses using LangGraph
 - **Tool Execution** - Real-world actions like weather lookup, Spotify control, reminders, and web search
-- **Emotional Intelligence** - Mood analysis across 28 emotions that adapts responses based on user sentiment
-- **Memory** - Short-term conversation history plus long-term episodic memory via vector databases
-- **Proactive Behavior** - Scheduler-driven actions including curiosity-based engagement and mood-triggered responses
+- **Emotional Intelligence** - Mood analysis across 10 bounded emotion dimensions
+- **Memory** - Short-term conversation history plus long-term episodic memory via pluggable backends
+- **Proactive Behavior** - Scheduler-driven actions, inactivity-based history compaction, and internal runtime events
 - **Audio Support** - Full speech-to-text (Whisper) and text-to-speech (EdgeTTS) pipeline
 
 Think of it as a personal AI assistant that lives in your chat platforms, remembers conversations, understands emotions, and can take actions on your behalf.
 
 ## Architecture Overview
 
-![Architecture Flow](flow.png)
+![Architecture Flow](docs/assets/flow.webp)
 
 **Message Flow:**
 ```
@@ -26,51 +26,61 @@ Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response
 
 **Core Components:**
 - **Gateway BUS** - Central message bus decoupling input from processing
-- **Orchestrator** - Manages state and agent execution
+- **Orchestrator** - Routes inbound sources and coordinates the runtime turn flow
 - **Agent** - LangGraph ReAct agent with tool access
 - **Output Sink** - Routes responses (direct or multi-platform)
-- **Scheduler** - Drives proactive behaviors
+- **Scheduler** - Publishes delayed and recurring events into the bus
 
 ## Features
 
 - **Multi-Platform**: Discord, Telegram, Webhook runtimes
 - **Audio Pipeline**: Whisper STT + EdgeTTS
-- **Memory Systems**: Short-term, Episodic (Pinecone), Graph (Neo4j)
-- **Mood Engine**: 28 emotion dimensions with dynamic analysis
-- **Tools**: Weather, Reminder, Spotify, Tavily Search + MCP tools
-- **Scheduler**: Fuzzy/precise scheduling, curiosity triggers, mood thresholds
+- **Memory Systems**: Short-term state + Episodic memory with in-memory, Redis, and Pinecone backends
+- **Mood Engine**: Fast/long emotion model with classifier-driven deltas
+- **Tools**: Reminder, Spotify, Tavily Search, calendar integrations
+- **Scheduler**: Precise/fuzzy triggers, repeating tasks, and inactivity-based compaction timers
 
 ## Quick Start
 
-**Prerequisites:** Python 3.14+, API keys for services you enable
+**Prerequisites:** Python `>=3.13,<3.14` and API keys for the services you enable
 
 **Environment (.env):**
 ```env
 API_KEY=your_groq_api_key
 DISCORD_BOT_TOKEN=your_discord_token
 DISCORD_USER_ID=your_user_id
+TELEGRAM_BOT_TOKEN=your_telegram_token
 ```
 
 **Install:**
 ```bash
-uv sync  # or: pip install .
+uv sync
 ```
 
 **Run:**
 ```bash
-python examples/main.py
+python main.py
 ```
+
+## Core Runtime Docs
+
+- [Scheduler](docs/scheduler.md)
+- [Mood Engine](docs/mood-engine.md)
+- [Orchestrator](docs/orchestrator.md)
+- [Episodic Memory](docs/episodic-memory.md)
+- [Conversation Contraction](docs/conversation-contraction.md)
+- [Output Sink](docs/output-sink.md)
 
 ## Project Structure
 
 ```
 src/
-├── adapters/    # Input/Output, Bus, Memory, State, Scheduler
-├── agent/       # ReAct agent service
-├── core/        # Orchestrator, OutputSink, MoodEngine, Scheduler
-├── tools/       # Built-in tools
-├── mcp/         # MCP tool integrations
-└── shared_types/# Models and protocols
+├── adapters/     # Input/output, bus, memory, state, scheduler backends
+├── agent/        # LangGraph-based agent service and nodes
+├── core/         # Orchestrator, mood, scheduler, episodic memory, contraction
+├── templates/    # Prompt templates used by core services
+├── tools/        # Built-in tools
+└── shared_types/ # Models, protocols, trigger types, and envelope types
 ```
 
 ## License
