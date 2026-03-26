@@ -89,6 +89,7 @@ class ConversationContractionService:
 
         for fact in facts:
             await episodic_memory.remember(
+                thread_id=thread_id,
                 fact=str(fact.get("fact") or ""),
                 source=str(fact.get("source") or "conversation"),
                 category=str(fact.get("category") or "misc"),
@@ -97,6 +98,8 @@ class ConversationContractionService:
                 tags=list(fact.get("tags") or []),
                 context=str(fact.get("context") or ""),
             )
+
+        print("compaction complete:", summary, facts)
 
         await state_store.replace_messages(
             thread_id,

@@ -36,6 +36,13 @@ class ReminderToolArgs(_InjectedStateArgs):
     )
 
 
+class LifeInfoToolArgs(_InjectedStateArgs):
+    include_profile: bool = Field(
+        default=True,
+        description="Whether to include the authored LIFE profile in the result.",
+    )
+
+
 class UserDeviceToolArgs(_InjectedStateArgs):
     command: Literal[
         "user_location",
@@ -84,6 +91,7 @@ class SpotifyToolArgs(_InjectedStateArgs):
 __all__ = [
     "WeatherToolArgs",
     "ReminderToolArgs",
+    "LifeInfoToolArgs",
     "UserDeviceToolArgs",
     "SpotifyToolArgs",
 ]

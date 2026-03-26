@@ -21,6 +21,16 @@ class AgentGraphState(TypedDict, total=False):
     error_reason: str | None
 
 
+class LifeGraphState(TypedDict, total=False):
+    content: str
+    messages: Annotated[list[BaseMessage], add_messages]
+    episodic: list[dict[str, Any]]
+    life_profile: str
+    life_notes: list[str]
+    notes: list[str]
+    error_reason: str | None
+
+
 OutputSinkMode = Literal["direct", "multi"]
 
 
@@ -77,6 +87,7 @@ def _optional_float(value: Any) -> float | None:
 
 __all__ = [
     "AgentGraphState",
+    "LifeGraphState",
     "OutputSinkMode",
     "Trigger",
     "TriggerType",

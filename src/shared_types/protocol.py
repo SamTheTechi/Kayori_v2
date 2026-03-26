@@ -61,10 +61,23 @@ class StateStore(Protocol):
         self, thread_id: str, msgs: list[BaseMessage]
     ) -> None: ...
 
-    async def get_window(self, thread_id: str,
-                         n: int) -> list[BaseMessage]: ...
+    async def get_agent_context(
+        self, thread_id: str, n: int
+    ) -> list[BaseMessage]: ...
+
+    async def get_mood_context(
+        self, thread_id: str, n: int
+    ) -> list[BaseMessage]: ...
 
     async def history_len(self, thread_id: str) -> int: ...
+
+    async def get_life_profile(self, thread_id: str) -> str: ...
+
+    async def replace_life_profile(self, thread_id: str, profile: str) -> None: ...
+
+    async def get_life_notes(self, thread_id: str) -> list[str]: ...
+
+    async def replace_life_notes(self, thread_id: str, notes: list[str]) -> None: ...
 
     # async def get_live_location(self) -> LocationState: ...
     # async def set_live_location(self, location: LocationState) -> None: ...
@@ -83,6 +96,7 @@ class EpisodicMemoryStore(Protocol):
     async def remember(
         self,
         *,
+        thread_id: str | None = None,
         fact: str,
         source: str,
         category: str = "misc",
@@ -97,10 +111,16 @@ class EpisodicMemoryStore(Protocol):
         query: str,
         limit: int = 3,
         *,
+        thread_id: str | None = None,
         min_score: float = 0.05,
     ) -> list[Any]: ...
 
-    async def compact(self, *, max_episodes: int | None = None) -> int: ...
+    async def compact(
+        self,
+        *,
+        thread_id: str | None = None,
+        max_episodes: int | None = None,
+    ) -> int: ...
 
 
 class EpisodicMemoryBackendRecord:

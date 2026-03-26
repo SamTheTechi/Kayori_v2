@@ -34,18 +34,23 @@ class RedisSchedulerBackend:
     async def pop_due(self, now: float) -> list[Trigger]:
         # Atomically pop all members with score <= now
         # ZPOPMIN is not range-based — use ZRANGEBYSCORE + ZREM in a pipeline
-        due_ids: list[str] = await self._client.zrangebyscore(
+        due_ids = await self._client.zrangebyscore(
             _HEAP_KEY, min="-inf", max=now
         )
         if not due_ids:
             return []
 
         # Check suppression
-        suppress_map: dict = await self._client.hgetall(_SUPPRESS_KEY)
-        triggers: list[Trigger] = []
+        suppress_map_raw: dict = await self._client.hgetall(_SUPPRESS_KEY)
+        suppress_map = {
+            self._decode(key): self._decode(value)
+            for key, value in suppress_map_raw.items()
+        }
+        triggers: list[str] = []
 
         pipe = self._client.pipeline()
-        for tid in due_ids:
+        for raw_tid in due_ids:
+            tid = self._decode(raw_tid)
             suppress_until = float(suppress_map.get(tid, 0))
             if suppress_until > now:
                 # Re-enqueue at suppression end time
@@ -79,7 +84,8 @@ class RedisSchedulerBackend:
     async def list_pending(self) -> list[Trigger]:
         entries = await self._client.zrange(_HEAP_KEY, 0, -1, withscores=True)
         triggers = []
-        for tid, score in entries:
+        for raw_tid, score in entries:
+            tid = self._decode(raw_tid)
             raw = await self._client.get(_TRIGGER_PREFIX + tid)
             if raw:
                 triggers.append(Trigger.from_dict(json.loads(raw)))
@@ -112,3 +118,9 @@ class RedisSchedulerBackend:
                 import json
                 mood = json.loads(message["data"])
                 await callback(mood)
+
+    @staticmethod
+    def _decode(value: object) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return str(value or "")

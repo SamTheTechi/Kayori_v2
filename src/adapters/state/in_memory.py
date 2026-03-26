@@ -9,6 +9,8 @@ class InMemoryStateStore:
     def __init__(self) -> None:
         self._moods: dict[str, MoodState] = {}
         self._histories: dict[str, MessagesHistory] = {}
+        self._life_profiles: dict[str, str] = {}
+        self._life_notes: dict[str, list[str]] = {}
         self._lock = asyncio.Lock()
         # now = time.time()
         # self._live = LocationState(latitude=0.0, longitude=0.0, timestamp=now)
@@ -49,15 +51,40 @@ class InMemoryStateStore:
             history = self._get_or_create_history(thread_id)
             history.replace(msgs)
 
-    async def get_window(self, thread_id: str, n: int) -> list[BaseMessage]:
+    async def get_agent_context(self, thread_id: str, n: int) -> list[BaseMessage]:
         async with self._lock:
             history = self._get_or_create_history(thread_id)
-            return history.get_window(n)
+            return _agent_context(history.all(), n)
+
+    async def get_mood_context(self, thread_id: str, n: int) -> list[BaseMessage]:
+        async with self._lock:
+            history = self._get_or_create_history(thread_id)
+            return _raw_window(history.all(), n)
 
     async def history_len(self, thread_id: str) -> int:
         async with self._lock:
             history = self._get_or_create_history(thread_id)
             return len(history)
+
+    # ------------------------------------------------------------------
+    # LIFE
+    # ------------------------------------------------------------------
+
+    async def get_life_profile(self, thread_id: str) -> str:
+        async with self._lock:
+            return str(self._life_profiles.get(_thread_key(thread_id), ""))
+
+    async def replace_life_profile(self, thread_id: str, profile: str) -> None:
+        async with self._lock:
+            self._life_profiles[_thread_key(thread_id)] = _clean_profile(profile)
+
+    async def get_life_notes(self, thread_id: str) -> list[str]:
+        async with self._lock:
+            return list(self._life_notes.get(_thread_key(thread_id), []))
+
+    async def replace_life_notes(self, thread_id: str, notes: list[str]) -> None:
+        async with self._lock:
+            self._life_notes[_thread_key(thread_id)] = _clean_notes(notes)
 
     # ------------------------------------------------------------------
     # Location
@@ -99,3 +126,47 @@ class InMemoryStateStore:
 def _thread_key(thread_id: str) -> str:
     key = str(thread_id or "").strip()
     return key or "global"
+
+
+def _clean_profile(profile: str) -> str:
+    return str(profile or "").strip()
+
+
+def _clean_notes(notes: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    for note in notes or []:
+        text = " ".join(str(note or "").strip().split())
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _agent_context(messages: list[BaseMessage], n: int) -> list[BaseMessage]:
+    limit = max(0, int(n))
+    if limit == 0:
+        return []
+
+    summary, raw_messages = _split_summary(messages)
+    if summary is None:
+        return raw_messages[-limit:]
+    if limit == 1:
+        return [summary]
+    return [summary, *raw_messages[-(limit - 1):]]
+
+
+def _raw_window(messages: list[BaseMessage], n: int) -> list[BaseMessage]:
+    limit = max(0, int(n))
+    if limit == 0:
+        return []
+    _, raw_messages = _split_summary(messages)
+    return raw_messages[-limit:]
+
+
+def _split_summary(messages: list[BaseMessage]) -> tuple[BaseMessage | None, list[BaseMessage]]:
+    if messages and _is_compacted_summary(messages[0]):
+        return messages[0], messages[1:]
+    return None, list(messages)
+
+
+def _is_compacted_summary(message: BaseMessage) -> bool:
+    return bool(getattr(message, "additional_kwargs", {}).get("kayori_compacted"))

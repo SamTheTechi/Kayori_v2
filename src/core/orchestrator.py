@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.agent.chat.service import ReactAgentService
+from src.agent.life.service import LifeAgentService
 from src.core.conversation_contraction import ConversationContractionService
 from src.core.mood_engine import MoodEngine
 from src.core.scheduler import AgentScheduler
@@ -23,6 +25,7 @@ logger = get_logger("core.orchestrator")
 
 AGENT_WINDOW = 12
 MOOD_WINDOW = 4
+LIFE_WINDOW = 8
 COMPACT_IDLE_SECONDS = 60 * 30
 COMPACT_TRIGGER_PREFIX = "compact:"
 
@@ -30,6 +33,7 @@ COMPACT_TRIGGER_PREFIX = "compact:"
 @dataclass(slots=True)
 class AgentOrchestrator:
     agent: ReactAgentService
+    life_agent: LifeAgentService
     bus: MessageBus
     state_store: StateStore
     mood_engine: MoodEngine
@@ -43,10 +47,18 @@ class AgentOrchestrator:
             envelope: MessageEnvelope = await self.bus.consume()
             try:
                 # Resolve the conversation thread once, then route by source.
-                thread_id = resolve_thread_id(
-                    target_user_id=envelope.target_user_id,
-                    channel_id=envelope.channel_id,
-                    author_id=envelope.author_id,
+                forced_thread_id = str(os.getenv("FORCE_THREAD_ID", "")).strip()
+                explicit_thread_id = str(
+                    dict(envelope.metadata or {}).get("thread_id") or ""
+                ).strip()
+                thread_id = (
+                    forced_thread_id
+                    or explicit_thread_id
+                    or resolve_thread_id(
+                        target_user_id=envelope.target_user_id,
+                        channel_id=envelope.channel_id,
+                        author_id=envelope.author_id,
+                    )
                 )
 
                 if envelope.source == MessageSource.LIFE:
@@ -74,9 +86,22 @@ class AgentOrchestrator:
                 )
 
     async def _handle_life(self, envelope: MessageEnvelope, thread_id: str) -> None:
-        content = (envelope.content or "").strip()
-        print(content)
-        return
+        messages_for_life = await self.state_store.get_agent_context(thread_id, LIFE_WINDOW)
+        life_profile = await self.state_store.get_life_profile(thread_id)
+        existing_notes = await self.state_store.get_life_notes(thread_id)
+        episodic = await self.episodic_memory.recall(
+            query=str(envelope.content or "").strip() or "recent internal continuity",
+            limit=3,
+            thread_id=thread_id,
+        )
+        notes = await self.life_agent.reflect(
+            content=envelope.content,
+            messages=messages_for_life,
+            episodic=episodic,
+            life_profile=life_profile,
+            life_notes=existing_notes,
+        )
+        await self.state_store.replace_life_notes(thread_id, notes)
 
     # Scheduled compaction bypasses the chat-turn threshold gate.
     async def _handle_compact(self, envelope: MessageEnvelope, thread_id: str) -> None:
@@ -94,8 +119,10 @@ class AgentOrchestrator:
 
         # Build the short-term context used for mood analysis and reply generation.
         mood = await self.state_store.get_mood(thread_id)
-        messages_for_agent = await self.state_store.get_window(thread_id, AGENT_WINDOW)
-        messages_for_mood_analysis = await self.state_store.get_window(thread_id, MOOD_WINDOW)
+        messages_for_agent = await self.state_store.get_agent_context(thread_id, AGENT_WINDOW)
+        messages_for_mood_analysis = await self.state_store.get_mood_context(thread_id, MOOD_WINDOW)
+
+        print(messages_for_agent)
 
         # Update live mood state before generating the reply.
         delta = await self.mood_engine.analyze(
@@ -108,7 +135,12 @@ class AgentOrchestrator:
         await self.state_store.set_mood(thread_id, next_mood)
 
         # Recall a small number of long-term facts relevant to this turn.
-        facts = await self.episodic_memory.recall(query=content, limit=2)
+        facts = await self.episodic_memory.recall(
+            query=content,
+            limit=2,
+            thread_id=thread_id,
+        )
+        print(facts)
 
         # LLM call
         reply_text = await self.agent.respond(

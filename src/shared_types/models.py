@@ -66,9 +66,6 @@ class MessagesHistory:
         """Used after compression — swap trimmed window back in."""
         self._messages = list(msgs)
 
-    def get_window(self, n: int) -> list[BaseMessage]:
-        return self._messages[-n:]
-
     def all(self) -> list[BaseMessage]:
         return list(self._messages)
 
@@ -123,6 +120,28 @@ class MoodState:
             value = max(MOOD_MIN, min(MOOD_MAX, float(getattr(self, key))))
             setattr(self, key, round(value, 3))
         return self
+
+
+@dataclass(slots=True)
+class LifeNote:
+    content: str
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    kind: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "content": str(self.content or "").strip(),
+            "timestamp": str(self.timestamp or "").strip(),
+            "kind": str(self.kind or "").strip() or None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LifeNote":
+        return cls(
+            content=str(data.get("content", "")).strip(),
+            timestamp=str(data.get("timestamp") or datetime.now(UTC).isoformat()),
+            kind=str(data.get("kind") or "").strip() or None,
+        )
 
 
 # @dataclass(slots=True)

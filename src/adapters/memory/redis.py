@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from array import array
 from typing import Any
 
 from langchain_core.embeddings import Embeddings
-from redis.asyncio import Redis
+from redis import Redis
 from redisvl.index import SearchIndex
 from redisvl.query import VectorQuery
 from redisvl.query.filter import Tag
@@ -82,7 +84,8 @@ class RedisEpisodicMemory:
 
         namespace = self._resolve_namespace(namespace)
         vector = await self._embed_text(content)
-        self.index.load(
+        await asyncio.to_thread(
+            self.index.load,
             [
                 {
                     "id": self._record_key(record_id, namespace),
@@ -90,7 +93,7 @@ class RedisEpisodicMemory:
                     "namespace": namespace,
                     "content": str(content or ""),
                     "metadata_json": json.dumps(dict(metadata or {}), separators=(",", ":")),
-                    "embedding": vector,
+                    "embedding": self._encode_vector(vector),
                 }
             ],
             id_field="id",
@@ -105,9 +108,10 @@ class RedisEpisodicMemory:
     ) -> list[EpisodicMemorySearchResult]:
         namespace = self._resolve_namespace(namespace)
         vector = await self._embed_query(query)
-        rows = self.index.query(
+        rows = await asyncio.to_thread(
+            self.index.query,
             VectorQuery(
-                vector=vector,
+                vector=self._encode_vector(vector),
                 vector_field_name="embedding",
                 num_results=max(1, int(limit)),
                 return_fields=[
@@ -149,7 +153,8 @@ class RedisEpisodicMemory:
         ids: list[str] = []
         prefix = f"{self.prefix}:{namespace}:"
         while True:
-            cursor, keys = await self.redis_client.scan(
+            cursor, keys = await asyncio.to_thread(
+                self.redis_client.scan,
                 cursor=cursor,
                 match=f"{prefix}*",
                 count=200,
@@ -178,7 +183,7 @@ class RedisEpisodicMemory:
             pipe.hgetall(self._record_key(record_id, namespace))
 
         records: list[EpisodicMemoryBackendRecord] = []
-        for row in await pipe.execute():
+        for row in await asyncio.to_thread(pipe.execute):
             if not row:
                 continue
             fields = {self._decode(key): value for key, value in dict(row).items()}
@@ -206,7 +211,8 @@ class RedisEpisodicMemory:
             return
 
         namespace = self._resolve_namespace(namespace)
-        await self.redis_client.delete(
+        await asyncio.to_thread(
+            self.redis_client.delete,
             *[self._record_key(record_id, namespace) for record_id in ids]
         )
 
@@ -229,6 +235,10 @@ class RedisEpisodicMemory:
 
     def _resolve_namespace(self, namespace: str | None) -> str:
         return str(namespace or self.namespace).strip() or self.namespace
+
+    @staticmethod
+    def _encode_vector(vector: list[float]) -> bytes:
+        return array("f", (float(value) for value in vector)).tobytes()
 
     @staticmethod
     def _load_metadata(raw: Any) -> dict[str, Any]:

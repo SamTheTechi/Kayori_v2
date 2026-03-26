@@ -48,6 +48,7 @@ class EpisodicMemoryStore:
     async def remember(
         self,
         *,
+        thread_id: str | None = None,
         fact: str,
         source: str,
         category: str = "misc",
@@ -78,12 +79,15 @@ class EpisodicMemoryStore:
                 ]
             ),
             metadata=record,
-            namespace=self.namespace,
+            namespace=self._namespace_for(thread_id),
         )
 
         if self.max_episodes is not None:
             try:
-                await self.compact(max_episodes=self.max_episodes)
+                await self.compact(
+                    thread_id=thread_id,
+                    max_episodes=self.max_episodes,
+                )
             except Exception as exc:
                 print(f"[episodic-memory] compact failed: {exc}")
 
@@ -94,6 +98,7 @@ class EpisodicMemoryStore:
         query: str,
         limit: int = 3,
         *,
+        thread_id: str | None = None,
         min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         query = self._clean_text(query, 600)
@@ -112,8 +117,9 @@ class EpisodicMemoryStore:
         results = await self.backend.search(
             query=query,
             limit=max(limit * 5, 20),
-            namespace=self.namespace,
+            namespace=self._namespace_for(thread_id),
         )
+        print("result:", results)
 
         ranked: list[tuple[float, dict[str, Any]]] = []
         seen_ids: set[str] = set()
@@ -127,10 +133,9 @@ class EpisodicMemoryStore:
                 continue
             seen_ids.add(record_id)
 
-            backend_score = self._to_float(result.backend_score, 0.0)
-            if not 0.0 <= backend_score <= 1.0:
-                backend_score = self._clamp(
-                    (backend_score + 1.0) / 2.0, 0.0, 1.0)
+            backend_score = self._distance_to_similarity(
+                self._to_float(result.backend_score, 1.0)
+            )
             importance = max(1, min(5, self._to_int(
                 record.get("importance"), 3))) / 5.0
             score = (
@@ -145,13 +150,19 @@ class EpisodicMemoryStore:
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [record for _, record in ranked[:limit]]
 
-    async def compact(self, *, max_episodes: int | None = None) -> int:
+    async def compact(
+        self,
+        *,
+        thread_id: str | None = None,
+        max_episodes: int | None = None,
+    ) -> int:
         keep = self.max_episodes if max_episodes is None else max_episodes
         if keep is None:
             return 0
 
         keep = max(0, self._to_int(keep, 0))
-        ids = await self.backend.list_ids(namespace=self.namespace)
+        namespace = self._namespace_for(thread_id)
+        ids = await self.backend.list_ids(namespace=namespace)
         if len(ids) <= keep:
             return 0
 
@@ -160,7 +171,7 @@ class EpisodicMemoryStore:
             batch = ids[start: start + 200]
             fetched = await self.backend.fetch_records(
                 ids=batch,
-                namespace=self.namespace,
+                namespace=namespace,
             )
             for item in fetched:
                 record = self._record_from_backend_record(item)
@@ -202,7 +213,7 @@ class EpisodicMemoryStore:
         overflow = len(scored) - keep
         scored.sort(key=lambda item: item[0], reverse=True)
         delete_ids = [record_id for _, record_id in scored[:overflow]]
-        await self.backend.delete(ids=delete_ids, namespace=self.namespace)
+        await self.backend.delete(ids=delete_ids, namespace=namespace)
         return len(delete_ids)
 
     def _make_record(
@@ -317,6 +328,17 @@ class EpisodicMemoryStore:
         if len(text) <= max_len:
             return text
         return f"{text[: max_len - 3]}..."
+
+    @staticmethod
+    def _distance_to_similarity(distance: float) -> float:
+        distance = max(0.0, float(distance))
+        return 1.0 / (1.0 + distance)
+
+    def _namespace_for(self, thread_id: str | None) -> str:
+        suffix = self._clean_text(thread_id, 160)
+        if not suffix:
+            return self.namespace
+        return f"{self.namespace}:{suffix}"
 
 
 __all__ = ["EpisodicMemoryStore"]

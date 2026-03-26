@@ -6,11 +6,13 @@ from langchain_tavily import TavilySearch
 from langchain_groq import ChatGroq
 from langchain_community.embeddings import FastEmbedEmbeddings
 
-# from redis.asyncio import Redis
+from redis.asyncio import Redis as AsyncRedis
+from redis import Redis as SyncRedis
 
 from src.adapters.audio.stt import WhisperSttAdapter
 from src.adapters.audio.tts import EdgeTtsAdapter
-from src.adapters.bus.in_memory import InMemoryMessageBus
+# from src.adapters.bus.in_memory import InMemoryMessageBus
+from src.adapters.bus.redis_bus import RedisMessageBus
 from src.adapters.input.console_input import ConsoleInputGateway
 from src.adapters.input.discord_input import DiscordInputAdapter
 from src.adapters.input.telegram_input import TelegramInputAdapter
@@ -22,21 +24,26 @@ from src.adapters.output.webhook_output import WebhookOutputAdapter
 from src.adapters.runtime.discord_runtime import DiscordRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
-from src.adapters.state.in_memory import InMemoryStateStore
-from src.adapters.memory.in_memory import InMemoryEpisodicMemory
+# from src.adapters.state.in_memory import InMemoryStateStore
+from src.adapters.state.redis import RedisStateStore
+# from src.adapters.memory.in_memory import InMemoryEpisodicMemory
+from src.adapters.memory.redis import RedisEpisodicMemory
 from src.agent.chat.service import ReactAgentService
+from src.agent.life.service import LifeAgentService
 from src.core.mood_engine import MoodEngine
 from src.core.episodic_memory import EpisodicMemoryStore
 from src.core.orchestrator import AgentOrchestrator
 from src.core.outputsink import OutputSink
 from src.core.conversation_contraction import ConversationContractionService
-from src.adapters.scheduler.in_memory import InMemorySchedulerBackend
+# from src.adapters.scheduler.in_memory import InMemorySchedulerBackend
+from src.adapters.scheduler.redis import RedisSchedulerBackend
 from src.core.scheduler import AgentScheduler
 from src.logger import get_logger
 from src.shared_types.models import MessageSource
-from src.shared_types.protocol import InputAdapter, OutputAdapter
+from src.shared_types.protocol import InputAdapter, OutputAdapter, MessageBus
 from src.shared_types.types import Trigger, TriggerType
 from src.tools.calendar import CalendarTools
+from src.tools.life_info import LifeInfoTool
 from src.tools.reminder import ReminderTool
 from src.tools.spotify import SpotifyTool
 
@@ -78,21 +85,25 @@ async def _main() -> None:
         bearer_token=webhook_bearer_token,
     )
 
-    # redis_client = Redis.from_url()
-    # bus = RedisMessageBus(redis_client),
-    # state = RedisStateStore(redis_client),
+    async_redis = AsyncRedis.from_url("redis://localhost:6379")
+    sync_redis = SyncRedis.from_url("redis://localhost:6379")
+    bus = RedisMessageBus(async_redis)
+    state = RedisStateStore(async_redis)
 
-    bus = InMemoryMessageBus()
-    state = InMemoryStateStore()
+    # bus = InMemoryMessageBus()
+    # state = InMemoryStateStore()
 
     embedding_model = FastEmbedEmbeddings(
         model_name="BAAI/bge-small-en-v1.5"
     )
 
-    memory_backend = InMemoryEpisodicMemory(embedding=embedding_model)
+    # memory_backend = InMemoryEpisodicMemory(embedding=embedding_model)
+    memory_backend = RedisEpisodicMemory(
+        redis_client=sync_redis, embedding=embedding_model)
     episodic_memory = EpisodicMemoryStore(backend=memory_backend)
 
-    scheduler_backend = InMemorySchedulerBackend()
+    # scheduler_backend = InMemorySchedulerBackend()
+    scheduler_backend = RedisSchedulerBackend(redis_client=async_redis)
     scheduler = AgentScheduler(
         backend=scheduler_backend,
         bus=bus
@@ -122,6 +133,7 @@ async def _main() -> None:
     tools = [
         # WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
         ReminderTool(output=output_dispatcher),
+        LifeInfoTool(state_store=state),
         SpotifyTool(),
         TavilySearch(max_results=3, topic="general"),
     ]
@@ -143,6 +155,9 @@ async def _main() -> None:
         model=chat_model,
         tools=tools
     )
+    life_agent = LifeAgentService(
+        model=chat_model2,
+    )
 
     mood_engine = MoodEngine(
         model=chat_model2,
@@ -154,6 +169,7 @@ async def _main() -> None:
 
     orchestrator = AgentOrchestrator(
         agent=agent,
+        life_agent=life_agent,
         bus=bus,
         state_store=state,
         mood_engine=mood_engine,
@@ -279,7 +295,7 @@ def _build_outputs(
 def _build_inputs(
     *,
     enabled_inputs: list[str],
-    bus: InMemoryMessageBus,
+    bus: MessageBus,
     discord_runtime: DiscordRuntime,
     telegram_runtime: TelegramRuntime,
     webhook_runtime: WebhookRuntime,
