@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from langchain_core.messages import BaseMessage
-from src.shared_types.models import MoodState, MessagesHistory
+from datetime import UTC, datetime
+
+from src.shared_types.models import LifeNote, MoodState, MessagesHistory
 
 
 class InMemoryStateStore:
@@ -10,7 +12,7 @@ class InMemoryStateStore:
         self._moods: dict[str, MoodState] = {}
         self._histories: dict[str, MessagesHistory] = {}
         self._life_profiles: dict[str, str] = {}
-        self._life_notes: dict[str, list[str]] = {}
+        self._life_notes: dict[str, list[LifeNote]] = {}
         self._lock = asyncio.Lock()
         # now = time.time()
         # self._live = LocationState(latitude=0.0, longitude=0.0, timestamp=now)
@@ -66,6 +68,10 @@ class InMemoryStateStore:
             history = self._get_or_create_history(thread_id)
             return len(history)
 
+    async def list_threads(self) -> list[str]:
+        async with self._lock:
+            return sorted(self._histories.keys())
+
     # ------------------------------------------------------------------
     # LIFE
     # ------------------------------------------------------------------
@@ -78,13 +84,40 @@ class InMemoryStateStore:
         async with self._lock:
             self._life_profiles[_thread_key(thread_id)] = _clean_profile(profile)
 
-    async def get_life_notes(self, thread_id: str) -> list[str]:
+    async def get_life_notes(self, thread_id: str) -> list[LifeNote]:
         async with self._lock:
-            return list(self._life_notes.get(_thread_key(thread_id), []))
+            return [LifeNote.from_dict(note.to_dict()) for note in self._life_notes.get(_thread_key(thread_id), [])]
 
-    async def replace_life_notes(self, thread_id: str, notes: list[str]) -> None:
+    async def append_life_note(self, thread_id: str, note: LifeNote) -> None:
         async with self._lock:
-            self._life_notes[_thread_key(thread_id)] = _clean_notes(notes)
+            key = _thread_key(thread_id)
+            notes = list(self._life_notes.get(key, []))
+            cleaned = _clean_note(note)
+            if cleaned is None:
+                return
+            notes.append(cleaned)
+            self._life_notes[key] = notes
+
+    async def consume_life_note(self, thread_id: str) -> LifeNote | None:
+        async with self._lock:
+            key = _thread_key(thread_id)
+            notes = list(self._life_notes.get(key, []))
+            if not notes:
+                return None
+            note = notes.pop(0)
+            self._life_notes[key] = notes
+            return LifeNote.from_dict(note.to_dict())
+
+    async def prune_life_notes(self, thread_id: str, *, max_age_seconds: float) -> int:
+        async with self._lock:
+            key = _thread_key(thread_id)
+            notes = list(self._life_notes.get(key, []))
+            kept = [
+                note for note in notes
+                if _note_age_seconds(note) <= max(0.0, float(max_age_seconds))
+            ]
+            self._life_notes[key] = kept
+            return len(notes) - len(kept)
 
     # ------------------------------------------------------------------
     # Location
@@ -132,13 +165,38 @@ def _clean_profile(profile: str) -> str:
     return str(profile or "").strip()
 
 
-def _clean_notes(notes: list[str]) -> list[str]:
-    cleaned: list[str] = []
+def _clean_note(note: LifeNote | str) -> LifeNote | None:
+    if isinstance(note, LifeNote):
+        text = " ".join(str(note.content or "").strip().split())
+        if not text:
+            return None
+        timestamp = str(note.timestamp or "").strip() or datetime.now(UTC).isoformat()
+        kind = str(note.kind or "").strip() or None
+        return LifeNote(content=text, timestamp=timestamp, kind=kind)
+    text = " ".join(str(note or "").strip().split())
+    if not text:
+        return None
+    return LifeNote(content=text)
+
+
+def _clean_notes(notes: list[LifeNote | str]) -> list[LifeNote]:
+    cleaned: list[LifeNote] = []
     for note in notes or []:
-        text = " ".join(str(note or "").strip().split())
-        if text:
-            cleaned.append(text)
+        normalized = _clean_note(note)
+        if normalized is not None:
+            cleaned.append(normalized)
     return cleaned
+
+
+def _note_age_seconds(note: LifeNote) -> float:
+    try:
+        created_at = datetime.fromisoformat(str(note.timestamp))
+    except Exception:
+        return 0.0
+    now = datetime.now(UTC)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return max(0.0, (now - created_at.astimezone(UTC)).total_seconds())
 
 
 def _agent_context(messages: list[BaseMessage], n: int) -> list[BaseMessage]:

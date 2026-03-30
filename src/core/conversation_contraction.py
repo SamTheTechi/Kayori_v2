@@ -4,9 +4,8 @@ import asyncio
 import json
 from typing import Any
 
-from langchain_core.messages import AIMessage
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, SystemMessage
 
 from src.logger import get_logger
 from src.shared_types.protocol import EpisodicMemoryStore, StateStore
@@ -99,12 +98,10 @@ class ConversationContractionService:
                 context=str(fact.get("context") or ""),
             )
 
-        print("compaction complete:", summary, facts)
-
         await state_store.replace_messages(
             thread_id,
             [
-                AIMessage(
+                SystemMessage(
                     content=summary,
                     additional_kwargs={COMPACTED_KEY: True},
                 ),
@@ -121,8 +118,7 @@ class ConversationContractionService:
             return "", []
 
         msg = "\n".join(
-            f"{'user' if message.type == 'human' else 'assistant'}: {
-                message.content}"
+            f"{self._message_role(message)}: {message.content}"
             for message in messages
             if str(message.content or "").strip()
         ) or "None."
@@ -139,9 +135,9 @@ class ConversationContractionService:
                 timeout=max(0.05, float(self.timeout_seconds)),
             )
         except Exception as exc:
-            await logger.exception(
-                "conversation_contraction_failed",
-                "Conversation contraction model invocation failed.",
+            await logger.error(
+                "contraction_failed",
+                "Conversation contraction failed.",
                 context={
                     "timeout_seconds": float(self.timeout_seconds),
                     "message_count": len(messages),
@@ -216,6 +212,17 @@ class ConversationContractionService:
         if len(text) <= max_len:
             return text
         return f"{text[: max_len - 3]}..."
+
+    def _message_role(self, message: BaseMessage) -> str:
+        if self._is_compacted_summary(message):
+            return "system"
+        if message.type == "human":
+            return "user"
+        if message.type == "ai":
+            return "assistant"
+        if message.type == "system":
+            return "system"
+        return "assistant"
 
     def _is_compacted_summary(self, message: BaseMessage) -> bool:
         return bool(getattr(message, "additional_kwargs", {}).get(COMPACTED_KEY))

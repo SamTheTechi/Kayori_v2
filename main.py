@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
@@ -10,6 +11,9 @@ from redis.asyncio import Redis as AsyncRedis
 from redis import Redis as SyncRedis
 
 from src.adapters.audio.stt import WhisperSttAdapter
+from src.adapters.http.logs import register_logs_routes
+from src.adapters.http.metrics import register_metrics_routes
+from src.adapters.http.ping import register_ping_routes
 from src.adapters.audio.tts import EdgeTtsAdapter
 # from src.adapters.bus.in_memory import InMemoryMessageBus
 from src.adapters.bus.redis_bus import RedisMessageBus
@@ -54,8 +58,8 @@ logger = get_logger("examples.main")
 async def _main() -> None:
     load_dotenv()
 
-    enabled_inputs = ["telegram", "webhook"]
-    enabled_outputs = ["telegram", "webhook"]
+    enabled_inputs = ["discord", "webhook"]
+    enabled_outputs = ["discord", "webhook"]
 
     # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
@@ -92,6 +96,8 @@ async def _main() -> None:
 
     # bus = InMemoryMessageBus()
     # state = InMemoryStateStore()
+
+    await _seed_life_profile_if_empty(state)
 
     embedding_model = FastEmbedEmbeddings(
         model_name="BAAI/bge-small-en-v1.5"
@@ -200,20 +206,23 @@ async def _main() -> None:
     input_tasks: list[asyncio.Task[None]] = []
 
     await output_dispatcher.start()
+    register_ping_routes(webhook_runtime)
+    register_logs_routes(webhook_runtime)
+    register_metrics_routes(webhook_runtime, state)
     await webhook_runtime.start()
     await scheduler.start()
 
     try:
-        await scheduler.push(
-            Trigger(
-                trigger_type=TriggerType.PRECISE,
-                source=MessageSource.LIFE,
-                content="Send a warm one-minute check-in message to the user.",
-                interval_seconds=10,
-                repeat=True
-            )
-        )
-
+        # await scheduler.push(
+        #     Trigger(
+        #         trigger_type=TriggerType.PRECISE,
+        #         source=MessageSource.LIFE,
+        #         content="Send a warm one-minute check-in message to the user.",
+        #         interval_seconds=10,
+        #         repeat=True
+        #     )
+        # )
+        #
         for adapter in inputs:
             input_tasks.append(
                 asyncio.create_task(
@@ -226,9 +235,9 @@ async def _main() -> None:
             try:
                 await adapter.stop()
             except Exception as exc:
-                await logger.exception(
+                await logger.error(
                     "input_stop_failed",
-                    "Input adapter stop failed during shutdown.",
+                    "Input stop failed.",
                     context={"adapter": adapter.name},
                     error=exc,
                 )
@@ -333,6 +342,30 @@ def _build_inputs(
 
 def main() -> None:
     asyncio.run(_main())
+
+
+async def _seed_life_profile_if_empty(state: RedisStateStore) -> None:
+    profile_path = str(os.getenv("LIFE_PROFILE_FILE", "")).strip()
+    if not profile_path:
+        return
+
+    profile_text = _read_profile_file(profile_path)
+    if not profile_text:
+        return
+
+    thread_id = str(os.getenv("FORCE_THREAD_ID", "")).strip() or "global"
+    existing_profile = await state.get_life_profile(thread_id)
+    if existing_profile:
+        return
+
+    await state.replace_life_profile(thread_id, profile_text)
+
+
+def _read_profile_file(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
 
 
 if __name__ == "__main__":

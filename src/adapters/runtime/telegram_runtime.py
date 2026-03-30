@@ -85,7 +85,7 @@ class TelegramRuntime:
                     allowed_updates=Update.ALL_TYPES,
                 )
                 await logger.info(
-                    "telegram_polling_started",
+                    "telegram_started",
                     "Telegram polling started.",
                     context={
                         "poll_interval_seconds": self.poll_interval_seconds,
@@ -134,9 +134,9 @@ class TelegramRuntime:
             try:
                 await handler(update)
             except Exception as exc:
-                await logger.exception(
+                await logger.error(
                     "telegram_handler_failed",
-                    "Telegram update handler failed.",
+                    "Telegram handler failed.",
                     context={
                         "update_id": getattr(update, "update_id", None),
                     },

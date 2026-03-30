@@ -6,7 +6,6 @@ import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from src.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.shared_types.protocol import StateStore
 from src.shared_types.tool_schemas import UserDeviceToolArgs
 
@@ -21,7 +20,6 @@ class UserDeviceTool(BaseTool):
     _state_store: StateStore = PrivateAttr()
     _join_api_key: str | None = PrivateAttr(default=None)
     _join_device_id: str | None = PrivateAttr(default=None)
-    _circuit: CircuitBreaker = PrivateAttr()
 
     def __init__(
         self,
@@ -29,18 +27,11 @@ class UserDeviceTool(BaseTool):
         state_store: StateStore,
         join_api_key: str | None,
         join_device_id: str | None,
-        failure_threshold: int = 5,
-        recovery_timeout_seconds: float = 30.0,
     ) -> None:
         super().__init__()
         self._state_store = state_store
         self._join_api_key = join_api_key
         self._join_device_id = join_device_id
-        self._circuit = CircuitBreaker(
-            name="join_api",
-            failure_threshold=failure_threshold,
-            recovery_timeout_seconds=recovery_timeout_seconds,
-        )
 
     async def _arun(
         self,
@@ -75,13 +66,7 @@ class UserDeviceTool(BaseTool):
             "text": tasker_text,
         }
 
-        try:
-            response = await self._circuit.call(
-                lambda: self._send_join_request(url, params),
-                fallback=None,
-            )
-        except CircuitOpenError:
-            return "Join service temporarily unavailable (circuit open). Try again in a moment."
+        response = await self._send_join_request(url, params)
 
         if response is None:
             return "Failed to send device command (service unavailable)."

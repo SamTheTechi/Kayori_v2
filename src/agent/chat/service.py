@@ -57,9 +57,9 @@ class ReactAgentService:
         try:
             result = await self._graph.ainvoke(state_input)
         except Exception as exc:
-            await logger.exception(
-                "agent_graph_invoke_failed",
-                "Agent graph invocation failed.",
+            await logger.error(
+                "agent_failed",
+                "Agent graph failed.",
                 context={
                     "source": str(envelope.source),
                     "channel_id": envelope.channel_id,

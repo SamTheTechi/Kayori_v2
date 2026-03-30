@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,20 +33,6 @@ class JsonlLogger:
             max_lines=self.max_lines,
             include_traceback=self.include_traceback,
             name=name,
-        )
-
-    async def debug(
-        self,
-        event: str,
-        message: str = "",
-        *,
-        context: dict[str, Any] | None = None,
-    ) -> None:
-        await self._write_event(
-            level="debug",
-            event=event,
-            message=message,
-            context=context,
         )
 
     async def info(
@@ -94,23 +79,6 @@ class JsonlLogger:
             error=error,
         )
 
-    async def exception(
-        self,
-        event: str,
-        message: str = "",
-        *,
-        context: dict[str, Any] | None = None,
-        error: BaseException | str | None = None,
-    ) -> None:
-        await self._write_event(
-            level="error",
-            event=event,
-            message=message,
-            context=context,
-            error=error,
-            include_traceback=True,
-        )
-
     async def _write_event(
         self,
         *,
@@ -119,7 +87,6 @@ class JsonlLogger:
         message: str,
         context: dict[str, Any] | None = None,
         error: BaseException | str | None = None,
-        include_traceback: bool = False,
     ) -> None:
         if not self.enabled:
             return
@@ -136,12 +103,6 @@ class JsonlLogger:
         error_payload = _error_payload(error)
         if error_payload is not None:
             payload["error"] = error_payload
-
-        should_include_traceback = include_traceback and self.include_traceback
-        if should_include_traceback:
-            trace = traceback.format_exc().strip()
-            if trace and trace != "NoneType: None":
-                payload["traceback"] = trace
 
         async with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)

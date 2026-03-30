@@ -6,17 +6,19 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from src.shared_types.models import MessageEnvelope
+from src.shared_types.models import LifeNote, MessageEnvelope
 from src.shared_types.protocol import StateStore
 from src.shared_types.thread_identity import resolve_thread_id
 from src.shared_types.tool_schemas import LifeInfoToolArgs
+
+LIFE_NOTE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3
 
 
 class LifeInfoTool(BaseTool):
     name: str = "life_info_tool"
     description: str = (
-        "Reads Kayori's internal LIFE context for the current thread, including "
-        "the authored LIFE profile and the latest distilled LIFE notes."
+        "Reads Kayori's internal LIFE context for the current thread and "
+        "consumes one queued LIFE note."
     )
     args_schema: type[BaseModel] = LifeInfoToolArgs
 
@@ -36,7 +38,11 @@ class LifeInfoTool(BaseTool):
             return "LIFE info is unavailable because no message context was provided."
 
         thread_id = _resolve_effective_thread_id(envelope)
-        notes = await self._state_store.get_life_notes(thread_id)
+        await self._state_store.prune_life_notes(
+            thread_id,
+            max_age_seconds=LIFE_NOTE_MAX_AGE_SECONDS,
+        )
+        note = await self._state_store.consume_life_note(thread_id)
         profile = (
             await self._state_store.get_life_profile(thread_id)
             if include_profile
@@ -48,9 +54,9 @@ class LifeInfoTool(BaseTool):
             lines.append("LIFE profile:")
             lines.append(profile or "None.")
 
-        lines.append("LIFE notes:")
-        if notes:
-            lines.extend(f"- {note}" for note in notes[:3])
+        lines.append("Current LIFE note:")
+        if note is not None:
+            lines.append(_note_text(note))
         else:
             lines.append("None.")
 
@@ -83,3 +89,6 @@ def _resolve_effective_thread_id(envelope: MessageEnvelope) -> str:
         )
     )
 
+
+def _note_text(note: LifeNote) -> str:
+    return str(note.content or "").strip() or "None."

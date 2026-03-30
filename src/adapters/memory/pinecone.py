@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.embeddings import Embeddings
-from langchain_pinecone import PineconeVectorStore
-from pinecone import Pinecone, ServerlessSpec
 
 from src.shared_types.protocol import (
     EpisodicMemoryBackendRecord,
@@ -22,6 +20,8 @@ class PineconeEpisodicMemory:
         namespace: str | None = "kayori-episodic",
         embedding: Embeddings,
     ) -> None:
+        from langchain_pinecone import PineconeVectorStore
+        from pinecone import Pinecone, ServerlessSpec
 
         pc = Pinecone(api_key=api_key)
 

@@ -17,7 +17,7 @@ def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):
         messages = list(state.get("messages") or [])
         if not messages:
             return {
-                "messages": [AIMessage(content='{"notes": []}')],
+                "messages": [AIMessage(content='{"note": null}')],
                 "error_reason": "empty_messages",
             }
 
@@ -33,14 +33,14 @@ def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):
                     timeout=timeout_seconds,
                 )
         except Exception as exc:
-            await logger.exception(
+            await logger.error(
                 "life_model_call_failed",
-                "LIFE model invocation failed.",
+                "LIFE model call failed.",
                 context={"timeout_seconds": timeout_seconds},
                 error=exc,
             )
             return {
-                "messages": [AIMessage(content='{"notes": []}')],
+                "messages": [AIMessage(content='{"note": null}')],
                 "error_reason": str(exc),
             }
 
@@ -49,4 +49,3 @@ def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):
         return {"messages": [result]}
 
     return call_model_node
-

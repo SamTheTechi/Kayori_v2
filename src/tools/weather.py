@@ -7,7 +7,6 @@ import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from src.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.shared_types.protocol import StateStore
 from src.shared_types.tool_schemas import WeatherToolArgs
 
@@ -19,24 +18,16 @@ class WeatherTool(BaseTool):
 
     _state_store: StateStore = PrivateAttr()
     _api_key: str | None = PrivateAttr(default=None)
-    _circuit: CircuitBreaker = PrivateAttr()
 
     def __init__(
         self,
         *,
         state_store: StateStore,
         api_key: str | None,
-        failure_threshold: int = 5,
-        recovery_timeout_seconds: float = 30.0,
     ) -> None:
         super().__init__()
         self._state_store = state_store
         self._api_key = api_key
-        self._circuit = CircuitBreaker(
-            name="weather_api",
-            failure_threshold=failure_threshold,
-            recovery_timeout_seconds=recovery_timeout_seconds,
-        )
 
     async def _arun(
         self,
@@ -63,13 +54,7 @@ class WeatherTool(BaseTool):
         url = "https://api.weatherapi.com/v1/current.json"
         params = {"key": self._api_key, "q": location_query, "aqi": "no"}
 
-        try:
-            response = await self._circuit.call(
-                lambda: self._fetch_weather(url, params),
-                fallback=None,
-            )
-        except CircuitOpenError:
-            return "Weather service temporarily unavailable (circuit open). Try again in a moment."
+        response = await self._fetch_weather(url, params)
 
         if response is None:
             return "Weather request failed. Try again shortly."

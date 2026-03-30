@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from datetime import UTC, datetime
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from src.agent.chat.service import ReactAgentService
 from src.agent.life.service import LifeAgentService
+from src.adapters.webhook_common import ensure_outbound_webhook_metadata
 from src.core.conversation_contraction import ConversationContractionService
 from src.core.mood_engine import MoodEngine
 from src.core.scheduler import AgentScheduler
@@ -17,7 +19,7 @@ from src.shared_types.protocol import (
     OutputAdapter,
     StateStore,
 )
-from src.shared_types.models import MessageEnvelope, MessageSource, OutboundMessage
+from src.shared_types.models import LifeNote, MessageEnvelope, MessageSource, OutboundMessage
 from src.shared_types.types import Trigger, TriggerType
 from src.shared_types.thread_identity import resolve_thread_id
 
@@ -25,9 +27,9 @@ logger = get_logger("core.orchestrator")
 
 AGENT_WINDOW = 12
 MOOD_WINDOW = 4
-LIFE_WINDOW = 8
 COMPACT_IDLE_SECONDS = 60 * 30
 COMPACT_TRIGGER_PREFIX = "compact:"
+LIFE_NOTE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3
 
 
 @dataclass(slots=True)
@@ -47,7 +49,8 @@ class AgentOrchestrator:
             envelope: MessageEnvelope = await self.bus.consume()
             try:
                 # Resolve the conversation thread once, then route by source.
-                forced_thread_id = str(os.getenv("FORCE_THREAD_ID", "")).strip()
+                forced_thread_id = str(
+                    os.getenv("FORCE_THREAD_ID", "")).strip()
                 explicit_thread_id = str(
                     dict(envelope.metadata or {}).get("thread_id") or ""
                 ).strip()
@@ -72,9 +75,9 @@ class AgentOrchestrator:
                 await self._handle_chat(envelope, thread_id)
 
             except Exception as exc:
-                await logger.exception(
-                    "orchestrator_envelope_failed",
-                    "Failed to process inbound envelope.",
+                await logger.error(
+                    "orchestrator_failed",
+                    "Envelope handling failed.",
                     context={
                         "envelope_id": envelope.id,
                         "source": str(envelope.source),
@@ -86,22 +89,30 @@ class AgentOrchestrator:
                 )
 
     async def _handle_life(self, envelope: MessageEnvelope, thread_id: str) -> None:
-        messages_for_life = await self.state_store.get_agent_context(thread_id, LIFE_WINDOW)
+        await self.state_store.prune_life_notes(
+            thread_id,
+            max_age_seconds=LIFE_NOTE_MAX_AGE_SECONDS,
+        )
+        history = await self.state_store.get_history(thread_id)
+        summary = _compacted_summary(history.all())
         life_profile = await self.state_store.get_life_profile(thread_id)
-        existing_notes = await self.state_store.get_life_notes(thread_id)
         episodic = await self.episodic_memory.recall(
-            query=str(envelope.content or "").strip() or "recent internal continuity",
+            query=str(envelope.content or "").strip(
+            ) or "recent internal continuity",
             limit=3,
             thread_id=thread_id,
         )
-        notes = await self.life_agent.reflect(
+        note = await self.life_agent.reflect(
             content=envelope.content,
-            messages=messages_for_life,
+            summary=summary,
             episodic=episodic,
             life_profile=life_profile,
-            life_notes=existing_notes,
         )
-        await self.state_store.replace_life_notes(thread_id, notes)
+        if note:
+            await self.state_store.append_life_note(
+                thread_id,
+                note=_life_note(note),
+            )
 
     # Scheduled compaction bypasses the chat-turn threshold gate.
     async def _handle_compact(self, envelope: MessageEnvelope, thread_id: str) -> None:
@@ -121,8 +132,6 @@ class AgentOrchestrator:
         mood = await self.state_store.get_mood(thread_id)
         messages_for_agent = await self.state_store.get_agent_context(thread_id, AGENT_WINDOW)
         messages_for_mood_analysis = await self.state_store.get_mood_context(thread_id, MOOD_WINDOW)
-
-        print(messages_for_agent)
 
         # Update live mood state before generating the reply.
         delta = await self.mood_engine.analyze(
@@ -171,12 +180,10 @@ class AgentOrchestrator:
                 episodic_memory=self.episodic_memory,
             )
         except Exception as exc:
-            await logger.exception(
-                "orchestrator_contraction_failed",
-                "Conversation compaction failed.",
-                context={
-                    "thread_id": thread_id,
-                },
+            await logger.error(
+                "contraction_failed",
+                "Compaction failed.",
+                context={"thread_id": thread_id},
                 error=exc,
             )
 
@@ -187,9 +194,9 @@ class AgentOrchestrator:
         try:
             await self.output.send(self._build_outbound(envelope, reply_text))
         except Exception as exc:
-            await logger.exception(
-                "orchestrator_output_send_failed",
-                "Failed to send outbound response.",
+            await logger.error(
+                "output_failed",
+                "Outbound send failed.",
                 context={
                     "envelope_id": envelope.id,
                     "source": str(envelope.source),
@@ -221,11 +228,27 @@ class AgentOrchestrator:
             content=content,
             channel_id=envelope.channel_id,
             target_user_id=envelope.target_user_id,
-            metadata={
-                **dict(envelope.metadata or {}),
-                "webhook_envelope_id": envelope.id,
-            },
+            metadata=ensure_outbound_webhook_metadata(
+                envelope.metadata,
+                envelope_id=envelope.id,
+            ),
             reply_to_message_id=envelope.message_id,
             mention_author=bool(
                 envelope.channel_id and not envelope.target_user_id),
         )
+
+
+def _compacted_summary(messages: list[BaseMessage]) -> str:
+    if not messages:
+        return ""
+    first = messages[0]
+    if bool(getattr(first, "additional_kwargs", {}).get("kayori_compacted")):
+        return str(first.content or "").strip()
+    return ""
+
+
+def _life_note(content: str) -> LifeNote:
+    return LifeNote(
+        content=" ".join(str(content or "").strip().split()),
+        timestamp=datetime.now(UTC).isoformat(),
+    )

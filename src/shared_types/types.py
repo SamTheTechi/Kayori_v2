@@ -23,11 +23,11 @@ class AgentGraphState(TypedDict, total=False):
 
 class LifeGraphState(TypedDict, total=False):
     content: str
+    summary: str
     messages: Annotated[list[BaseMessage], add_messages]
     episodic: list[dict[str, Any]]
     life_profile: str
-    life_notes: list[str]
-    notes: list[str]
+    note: str | None
     error_reason: str | None
 
 

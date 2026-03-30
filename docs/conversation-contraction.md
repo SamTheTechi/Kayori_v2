@@ -58,7 +58,7 @@ Current threshold:
    - a list of episodic facts
 5. Write the facts into episodic memory.
 6. Replace the stored history with:
-   - one synthetic summary `AIMessage`
+   - one synthetic summary `SystemMessage`
    - the last recent raw messages
 
 Current recent window:
@@ -70,7 +70,7 @@ compressing older context.
 
 ## Synthetic Summary Message
 
-The compacted summary is stored as an `AIMessage` with:
+The compacted summary is stored as a `SystemMessage` with:
 
 ```python
 additional_kwargs={"kayori_compacted": True}
@@ -78,6 +78,8 @@ additional_kwargs={"kayori_compacted": True}
 
 That marker lets the service detect and refresh the running summary later
 instead of repeatedly summarizing the summary as if it were normal dialogue.
+Using `SystemMessage` also avoids presenting the running summary to the model as
+if it were a prior spoken reply from Kayori.
 
 ## LLM Step
 
@@ -133,8 +135,8 @@ This gives both:
 ### Current Limits
 
 - output is still parsed from JSON text rather than a stricter typed schema
-- the compacted summary is stored as an `AIMessage`, which is pragmatic but not
-  a distinct history object type
+- the compacted summary is still a synthetic message inside the history stream,
+  even though it now uses `SystemMessage` rather than `AIMessage`
 - the transcript renderer assumes plain human/assistant text messages
 
 ## File Reference

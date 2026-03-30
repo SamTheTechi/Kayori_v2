@@ -281,12 +281,6 @@ class MoodEngine:
     @classmethod
     def _parse_delta(cls, raw_text: str) -> dict[str, float]:
         if not raw_text:
-            _log_async(
-                logger.debug(
-                    "mood_parse_empty",
-                    "Mood model returned empty content.",
-                )
-            )
             return cls._neutral_delta()
 
         try:

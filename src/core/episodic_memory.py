@@ -119,7 +119,6 @@ class EpisodicMemoryStore:
             limit=max(limit * 5, 20),
             namespace=self._namespace_for(thread_id),
         )
-        print("result:", results)
 
         ranked: list[tuple[float, dict[str, Any]]] = []
         seen_ids: set[str] = set()

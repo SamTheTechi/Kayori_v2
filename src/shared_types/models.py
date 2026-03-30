@@ -143,6 +143,10 @@ class LifeNote:
             kind=str(data.get("kind") or "").strip() or None,
         )
 
+    @property
+    def created_at(self) -> str:
+        return self.timestamp
+
 
 # @dataclass(slots=True)
 # class LocationState:

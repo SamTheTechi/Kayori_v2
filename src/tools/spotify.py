@@ -10,7 +10,6 @@ from pydantic import BaseModel, PrivateAttr
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyOAuth
 
-from src.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from src.shared_types.tool_schemas import SpotifyToolArgs
 
 SPOTIFY_TAG = "[spotify_tool]"
@@ -42,24 +41,16 @@ class SpotifyTool(BaseTool):
     args_schema: type[BaseModel] = SpotifyToolArgs
 
     _client: spotipy.Spotify | None = PrivateAttr(default=None)
-    _circuit: CircuitBreaker = PrivateAttr()
 
     def __init__(
         self,
         *,
         enabled: bool | None = None,
-        failure_threshold: int = 5,
-        recovery_timeout_seconds: float = 30.0,
     ) -> None:
         # Backward-compatible with the current app wiring. Tool enablement should
         # be controlled by whether this tool is added to the tools list at all.
         del enabled
         super().__init__()
-        self._circuit = CircuitBreaker(
-            name="spotify_api",
-            failure_threshold=failure_threshold,
-            recovery_timeout_seconds=recovery_timeout_seconds,
-        )
 
     async def _arun(
         self,
@@ -96,14 +87,9 @@ class SpotifyTool(BaseTool):
             return "Failed to initialize Spotify client."
 
         try:
-            result = await self._circuit.call(
-                lambda: self._execute_spotify_command(
-                    client, normalized, cleaned_query, step_value
-                ),
-                fallback="Spotify service temporarily unavailable (circuit open). Try again in a moment.",
+            result = await self._execute_spotify_command(
+                client, normalized, cleaned_query, step_value
             )
-        except CircuitOpenError:
-            return "Spotify service temporarily unavailable (circuit open). Try again in a moment."
         except SpotifyException as exc:
             return _format_spotify_error(exc)
         except Exception:

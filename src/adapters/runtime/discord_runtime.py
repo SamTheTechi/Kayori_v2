@@ -82,8 +82,8 @@ class DiscordRuntime:
         async def on_ready() -> None:
             self._ready.set()
             await logger.info(
-                "discord_ready",
-                "Discord runtime connected.",
+                "discord_started",
+                "Discord connected.",
                 context={"user": str(client.user)},
             )
 
@@ -97,9 +97,9 @@ class DiscordRuntime:
                 try:
                     await handler(message)
                 except Exception as exc:
-                    await logger.exception(
+                    await logger.error(
                         "discord_handler_failed",
-                        "Discord message handler failed.",
+                        "Discord handler failed.",
                         context={
                             "message_id": str(message.id),
                             "author_id": str(message.author.id),

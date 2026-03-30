@@ -9,6 +9,10 @@ import httpx
 
 from src.adapters.audio import EdgeTtsAdapter
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
+from src.adapters.webhook_common import (
+    webhook_envelope_id,
+    webhook_kind,
+)
 from src.logger import get_logger
 from src.shared_types.models import OutboundMessage, MessageSource
 
@@ -40,12 +44,37 @@ class WebhookOutputAdapter:
             await client.aclose()
 
     async def send(self, message: OutboundMessage) -> None:
-        await self._capture_runtime_response(message)
+        runtime = self.runtime
+        metadata = dict(message.metadata or {})
+        response_id = webhook_envelope_id(metadata)
+        if runtime is not None and response_id:
+            payload = {
+                "reply": str(message.content or "").strip(),
+                "envelope_id": response_id,
+            }
+            if payload["reply"] and webhook_kind(metadata) == "audio":
+                tts = self.tts
+                if tts is None:
+                    runtime.fail_response(
+                        response_id,
+                        "Webhook audio response requested without TTS adapter.",
+                    )
+                    raise RuntimeError(
+                        "Webhook audio response requested without TTS adapter."
+                    )
+                synthesis = await tts.synthesize(
+                    text=payload["reply"],
+                    voice=_optional_text(metadata.get("tts_voice")),
+                    response_format=_optional_text(metadata.get("tts_response_format")),
+                    speed=_optional_float(metadata.get("tts_speed")),
+                )
+                payload["audio_base64"] = base64.b64encode(
+                    synthesis.audio_bytes
+                ).decode("ascii")
+                payload["audio_content_type"] = synthesis.content_type
+            runtime.resolve_response(response_id, payload)
 
-        if not str(message.content or "").strip():
-            return
-
-        if not self.targets:
+        if not str(message.content or "").strip() or not self.targets:
             return
 
         await self.start()
@@ -60,82 +89,24 @@ class WebhookOutputAdapter:
 
         payload = message.to_dict()
         results = await asyncio.gather(
-            *(client.post(url, json=payload, headers=headers)
-              for url in self.targets),
+            *(client.post(url, json=payload, headers=headers) for url in self.targets),
             return_exceptions=True,
         )
         for url, result in zip(self.targets, results, strict=False):
             if isinstance(result, Exception):
-                await logger.exception(
-                    "webhook_output_send_failed",
-                    "Webhook output send failed.",
-                    context={
-                        "target_url": url,
-                    },
+                await logger.error(
+                    "webhook_send_failed",
+                    "Webhook send failed.",
+                    context={"target_url": url},
                     error=result,
                 )
                 continue
             if result.status_code >= 400:
                 await logger.warning(
-                    "webhook_output_target_http_error",
-                    "Webhook output target returned an error status.",
-                    context={
-                        "target_url": url,
-                        "status_code": result.status_code,
-                    },
+                    "webhook_target_error",
+                    "Webhook target returned an error.",
+                    context={"target_url": url, "status_code": result.status_code},
                 )
-
-    async def _capture_runtime_response(self, message: OutboundMessage) -> None:
-        runtime = self.runtime
-        metadata = dict(message.metadata or {})
-        correlation_id = str(metadata.get(
-            "webhook_correlation_id") or "").strip()
-        if runtime is None or not correlation_id:
-            return
-
-        try:
-            payload = await self._build_runtime_payload(
-                message=message, metadata=metadata
-            )
-        except Exception as exc:
-            runtime.fail_response(correlation_id, str(exc))
-            raise
-
-        runtime.resolve_response(correlation_id, payload)
-
-    async def _build_runtime_payload(
-        self,
-        *,
-        message: OutboundMessage,
-        metadata: dict[str, Any],
-    ) -> dict[str, Any]:
-        payload = {
-            "reply": str(message.content or "").strip(),
-            "envelope_id": str(metadata.get("webhook_envelope_id") or ""),
-        }
-        response_kind = (
-            str(metadata.get("webhook_response_kind") or "text").strip().lower()
-        )
-        if not payload["reply"] or response_kind != "audio":
-            return payload
-
-        tts = self.tts
-        if tts is None:
-            raise RuntimeError(
-                "Webhook audio response requested without TTS adapter.")
-
-        synthesis = await tts.synthesize(
-            text=payload["reply"],
-            voice=_optional_text(metadata.get("tts_voice")),
-            response_format=_optional_text(
-                metadata.get("tts_response_format")),
-            speed=_optional_float(metadata.get("tts_speed")),
-        )
-        payload["audio_base64"] = base64.b64encode(synthesis.audio_bytes).decode(
-            "ascii"
-        )
-        payload["audio_content_type"] = synthesis.content_type
-        return payload
 
 
 def _optional_text(value: Any) -> str | None:

@@ -42,16 +42,6 @@ class AgentScheduler:
             )
             return
         await self._backend.push(trigger)
-        await logger.debug(
-            "scheduler_trigger_pushed",
-            "Scheduled trigger.",
-            context={
-                "trigger_id": trigger._trigger_id,
-                "trigger_type": trigger.trigger_type.value,
-                "source": trigger.source.value,
-                "fire_at": trigger._scheduled_for,
-            },
-        )
 
     async def remove(self, trigger_id: str) -> None:
         await self._backend.remove(trigger_id)
@@ -111,8 +101,8 @@ class AgentScheduler:
                 for trigger in await self._backend.pop_due(now):
                     asyncio.create_task(self._dispatch(trigger, now))
             except Exception as exc:
-                await logger.exception(
-                    "scheduler_loop_failed",
+                await logger.error(
+                    "scheduler_failed",
                     "Scheduler loop failed.",
                     error=exc,
                 )

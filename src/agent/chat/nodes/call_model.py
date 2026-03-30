@@ -33,9 +33,9 @@ def build_call_model_node(model: BaseChatModel, timeout_seconds: int = 60):
                     timeout=timeout_seconds,
                 )
         except Exception as exc:
-            await logger.exception(
+            await logger.error(
                 "model_call_failed",
-                "Model invocation failed in call_model node.",
+                "Model call failed.",
                 context={"timeout_seconds": timeout_seconds},
                 error=exc,
             )

@@ -123,3 +123,4 @@ uv.lock
 *.pem
 *.key
 secrets/
+PR/

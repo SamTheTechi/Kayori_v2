@@ -4,8 +4,6 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import uuid4
-
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 
@@ -110,8 +108,8 @@ class WebhookRuntime:
         self._started = True
         await self._wait_until_started()
         await logger.info(
-            "webhook_runtime_started",
-            "Webhook runtime listening.",
+            "webhook_started",
+            "Webhook runtime started.",
             context={"host": self.host, "port": self.port},
         )
 
@@ -129,22 +127,20 @@ class WebhookRuntime:
             server.should_exit = True
         if task is not None:
             await asyncio.gather(task, return_exceptions=True)
-        for correlation_id in list(self._pending_responses):
-            self.discard_response(correlation_id)
+        for response_id in list(self._pending_responses):
+            self.discard_response(response_id)
 
-    def create_pending_response(self) -> str:
-        correlation_id = uuid4().hex
+    def register_pending_response(self, response_id: str) -> None:
         loop = asyncio.get_running_loop()
-        self._pending_responses[correlation_id] = loop.create_future()
-        return correlation_id
+        self._pending_responses[str(response_id)] = loop.create_future()
 
     async def wait_for_response(
         self,
-        correlation_id: str,
+        response_id: str,
         *,
         timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
-        future = self._pending_responses.get(correlation_id)
+        future = self._pending_responses.get(response_id)
         if future is None:
             raise RuntimeError("Webhook response is not registered.")
 
@@ -156,22 +152,22 @@ class WebhookRuntime:
         try:
             return await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
         except TimeoutError as exc:
-            self.discard_response(correlation_id)
+            self.discard_response(response_id)
             raise TimeoutError(
                 f"Webhook response timed out after {timeout:.1f}s."
             ) from exc
         finally:
-            self._pending_responses.pop(correlation_id, None)
+            self._pending_responses.pop(response_id, None)
 
-    def resolve_response(self, correlation_id: str, payload: dict[str, Any]) -> bool:
-        future = self._pending_responses.get(correlation_id)
+    def resolve_response(self, response_id: str, payload: dict[str, Any]) -> bool:
+        future = self._pending_responses.get(response_id)
         if future is None or future.done():
             return False
         future.set_result(payload)
         return True
 
-    def fail_response(self, correlation_id: str, detail: str) -> bool:
-        future = self._pending_responses.get(correlation_id)
+    def fail_response(self, response_id: str, detail: str) -> bool:
+        future = self._pending_responses.get(response_id)
         if future is None or future.done():
             return False
         future.set_exception(
@@ -179,8 +175,8 @@ class WebhookRuntime:
         )
         return True
 
-    def discard_response(self, correlation_id: str) -> None:
-        future = self._pending_responses.pop(correlation_id, None)
+    def discard_response(self, response_id: str) -> None:
+        future = self._pending_responses.pop(response_id, None)
         if future is not None and not future.done():
             future.cancel()
 

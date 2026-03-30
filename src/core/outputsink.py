@@ -48,9 +48,9 @@ class OutputSink:
         )
         for output, result in zip(selected_outputs, results, strict=False):
             if isinstance(result, Exception):
-                await logger.exception(
+                await logger.error(
                     "output_send_failed",
-                    "Output adapter send failed.",
+                    "Output send failed.",
                     context={
                         "adapter": output.name,
                         "source": str(message.source),
