@@ -12,6 +12,7 @@ def build_prepare_context_node():
         summary = str(state.get("summary") or "").strip() or "None."
         life_profile = str(state.get("life_profile") or "").strip() or "None."
         episodic = _format_episodic(list(state.get("episodic") or []))
+        recent_notes = _format_recent_notes(list(state.get("recent_notes") or []))
 
         try:
             formatted_messages = life_template.format_messages(
@@ -19,6 +20,7 @@ def build_prepare_context_node():
                 summary=summary,
                 life_profile=life_profile,
                 episodic=episodic,
+                recent_notes=recent_notes,
             )
             return {"messages": formatted_messages, "error_reason": None}
         except Exception as exc:
@@ -37,4 +39,9 @@ def _format_episodic(records: list[dict[str, Any]]) -> str:
         lines.append(f"- {fact}")
         if context:
             lines.append(f"  context: {context}")
+    return "\n".join(lines) if lines else "None."
+
+
+def _format_recent_notes(notes: list[str]) -> str:
+    lines = [f"- {str(note or '').strip()}" for note in notes[:3] if str(note or "").strip()]
     return "\n".join(lines) if lines else "None."

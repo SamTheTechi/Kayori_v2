@@ -27,6 +27,7 @@ class LifeGraphState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     episodic: list[dict[str, Any]]
     life_profile: str
+    recent_notes: list[str]
     note: str | None
     error_reason: str | None
 

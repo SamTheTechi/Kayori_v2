@@ -9,7 +9,7 @@ from langchain_core.messages import BaseMessage, SystemMessage
 
 from src.logger import get_logger
 from src.shared_types.protocol import EpisodicMemoryStore, StateStore
-from src.templates.episodic_strength_template import episodic_strength_template
+from src.templates.memory_compaction_template import memory_compaction_template
 
 COMPACT_THRESHOLD = 12
 COMPACT_KEEP_RECENT = 4
@@ -123,7 +123,7 @@ class ConversationContractionService:
             if str(message.content or "").strip()
         ) or "None."
 
-        prompt_messages = episodic_strength_template.format_messages(
+        prompt_messages = memory_compaction_template.format_messages(
             existing_summary=self._clean_text(
                 existing_summary, 4000) or "None.",
             messages=msg,

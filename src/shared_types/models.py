@@ -53,6 +53,7 @@ class MessageSource(StrEnum):
     COMPACT = "compact"
     SCHEDULER = "scheduler"
     LIFE = "life"
+    PROACTIVE = "proactive"
 
 
 @dataclass(slots=True)
@@ -148,6 +149,46 @@ class LifeNote:
         return self.timestamp
 
 
+@dataclass(slots=True)
+class InteractionState:
+    last_user_message_at: str | None = None
+    last_proactive_message_at: str | None = None
+    ignored_proactive_count: int = 0
+    proactive_sent_today: int = 0
+    proactive_sent_day: str | None = None
+    last_route_source: str | None = None
+    last_channel_id: str | None = None
+    last_target_user_id: str | None = None
+    last_author_id: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "last_user_message_at": _maybe_str(self.last_user_message_at),
+            "last_proactive_message_at": _maybe_str(self.last_proactive_message_at),
+            "ignored_proactive_count": max(0, int(self.ignored_proactive_count or 0)),
+            "proactive_sent_today": max(0, int(self.proactive_sent_today or 0)),
+            "proactive_sent_day": _maybe_str(self.proactive_sent_day),
+            "last_route_source": _maybe_str(self.last_route_source),
+            "last_channel_id": _maybe_str(self.last_channel_id),
+            "last_target_user_id": _maybe_str(self.last_target_user_id),
+            "last_author_id": _maybe_str(self.last_author_id),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "InteractionState":
+        return cls(
+            last_user_message_at=_maybe_str(data.get("last_user_message_at")),
+            last_proactive_message_at=_maybe_str(data.get("last_proactive_message_at")),
+            ignored_proactive_count=max(0, int(data.get("ignored_proactive_count", 0) or 0)),
+            proactive_sent_today=max(0, int(data.get("proactive_sent_today", 0) or 0)),
+            proactive_sent_day=_maybe_str(data.get("proactive_sent_day")),
+            last_route_source=_maybe_str(data.get("last_route_source")),
+            last_channel_id=_maybe_str(data.get("last_channel_id")),
+            last_target_user_id=_maybe_str(data.get("last_target_user_id")),
+            last_author_id=_maybe_str(data.get("last_author_id")),
+        )
+
+
 # @dataclass(slots=True)
 # class LocationState:
 #     latitude: float = 0.0
@@ -227,7 +268,6 @@ class MessageEnvelope:
     author_id: str | None = None
     message_id: str | None = None
     target_user_id: str | None = None
-    # attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid4().hex)
     created_at: str = field(
@@ -248,7 +288,6 @@ class MessageEnvelope:
             "channel_id": self.channel_id,
             "author_id": self.author_id,
             "target_user_id": self.target_user_id,
-            # "attachments": [attachment.to_dict() for attachment in self.attachments],
             "metadata": self.metadata,
             "id": self.id,
             "created_at": self.created_at,
@@ -262,7 +301,6 @@ class MessageEnvelope:
             channel_id=_maybe_str(data.get("channel_id")),
             author_id=_maybe_str(data.get("author_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
-            # attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
             created_at=str(data.get("created_at")
@@ -277,7 +315,6 @@ class OutboundMessage:
     channel_id: str | None = None
     target_user_id: str | None = None
     message_id: str | None = None
-    # attachments: list[MessageAttachment] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat())
@@ -291,7 +328,6 @@ class OutboundMessage:
             "channel_id": self.channel_id,
             "target_user_id": self.target_user_id,
             "message_id": self.message_id,
-            # "attachments": [attachment.to_dict() for attachment in self.attachments],
             "metadata": self.metadata,
             "created_at": self.created_at,
             "reply_to_message_id": self.reply_to_message_id,
@@ -306,7 +342,6 @@ class OutboundMessage:
             channel_id=_maybe_str(data.get("channel_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
             message_id=_maybe_str(data.get("message_id")),
-            # attachments=_attachments_from_any(data.get("attachments")),
             metadata=dict(data.get("metadata") or {}),
             created_at=str(data.get("created_at")
                            or datetime.now(UTC).isoformat()),
@@ -347,19 +382,3 @@ def _maybe_float(value: Any) -> float | None:
         return float(value)
     except Exception:
         return None
-
-
-# def _attachments_from_any(value: Any) -> list[MessageAttachment]:
-#     if not value:
-#         return []
-#     if isinstance(value, list):
-#         attachments: list[MessageAttachment] = []
-#         for item in value:
-#             if isinstance(item, MessageAttachment):
-#                 attachments.append(item)
-#             elif isinstance(item, dict):
-#                 parsed = MessageAttachment.from_dict(item)
-#                 if parsed.url:
-#                     attachments.append(parsed)
-#         return attachments
-#     return []

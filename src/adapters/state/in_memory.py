@@ -4,13 +4,14 @@ import asyncio
 from langchain_core.messages import BaseMessage
 from datetime import UTC, datetime
 
-from src.shared_types.models import LifeNote, MoodState, MessagesHistory
+from src.shared_types.models import InteractionState, LifeNote, MoodState, MessagesHistory
 
 
 class InMemoryStateStore:
     def __init__(self) -> None:
         self._moods: dict[str, MoodState] = {}
         self._histories: dict[str, MessagesHistory] = {}
+        self._interaction_states: dict[str, InteractionState] = {}
         self._life_profiles: dict[str, str] = {}
         self._life_notes: dict[str, list[LifeNote]] = {}
         self._lock = asyncio.Lock()
@@ -72,17 +73,24 @@ class InMemoryStateStore:
         async with self._lock:
             return sorted(self._histories.keys())
 
-    # ------------------------------------------------------------------
-    # LIFE
-    # ------------------------------------------------------------------
-
-    async def get_life_profile(self, thread_id: str) -> str:
+    async def get_interaction_state(self, thread_id: str) -> InteractionState:
         async with self._lock:
-            return str(self._life_profiles.get(_thread_key(thread_id), ""))
+            state = self._get_or_create_interaction_state(thread_id)
+            return InteractionState.from_dict(state.as_dict())
 
-    async def replace_life_profile(self, thread_id: str, profile: str) -> None:
+    async def set_interaction_state(self, thread_id: str, state: InteractionState) -> None:
         async with self._lock:
-            self._life_profiles[_thread_key(thread_id)] = _clean_profile(profile)
+            self._interaction_states[_thread_key(thread_id)] = InteractionState.from_dict(
+                state.as_dict()
+            )
+
+    async def get_life_profile(self) -> str:
+        async with self._lock:
+            return str(self._life_profiles.get("global", ""))
+
+    async def replace_life_profile(self, profile: str) -> None:
+        async with self._lock:
+            self._life_profiles["global"] = _clean_profile(profile)
 
     async def get_life_notes(self, thread_id: str) -> list[LifeNote]:
         async with self._lock:
@@ -119,26 +127,6 @@ class InMemoryStateStore:
             self._life_notes[key] = kept
             return len(notes) - len(kept)
 
-    # ------------------------------------------------------------------
-    # Location
-    # ------------------------------------------------------------------
-
-    # async def get_live_location(self) -> LocationState:
-    #     async with self._lock:
-    #         return LocationState.from_dict(self._live.as_dict())
-    #
-    # async def set_live_location(self, location: LocationState) -> None:
-    #     async with self._lock:
-    #         self._live = LocationState.from_dict(location.as_dict())
-    #
-    # async def get_pinned_location(self) -> LocationState:
-    #     async with self._lock:
-    #         return LocationState.from_dict(self._pinned.as_dict())
-    #
-    # async def set_pinned_location(self, location: LocationState) -> None:
-    #     async with self._lock:
-    #         self._pinned = LocationState.from_dict(location.as_dict())
-
     def _get_or_create_mood(self, thread_id: str) -> MoodState:
         key = _thread_key(thread_id)
         mood = self._moods.get(key)
@@ -146,6 +134,14 @@ class InMemoryStateStore:
             mood = MoodState()
             self._moods[key] = mood
         return mood
+
+    def _get_or_create_interaction_state(self, thread_id: str) -> InteractionState:
+        key = _thread_key(thread_id)
+        state = self._interaction_states.get(key)
+        if state is None:
+            state = InteractionState()
+            self._interaction_states[key] = state
+        return state
 
     def _get_or_create_history(self, thread_id: str) -> MessagesHistory:
         key = _thread_key(thread_id)

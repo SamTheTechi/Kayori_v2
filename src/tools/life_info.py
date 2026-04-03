@@ -17,8 +17,9 @@ LIFE_NOTE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3
 class LifeInfoTool(BaseTool):
     name: str = "life_info_tool"
     description: str = (
-        "Reads Kayori's internal LIFE context for the current thread and "
-        "consumes one queued LIFE note."
+        "Use this when the user asks about Kayori's life, inner state, what "
+        "she has been carrying lately, or explicitly asks to use LIFE. "
+        "Returns authored LIFE profile context and recent LIFE notes."
     )
     args_schema: type[BaseModel] = LifeInfoToolArgs
 
@@ -31,6 +32,8 @@ class LifeInfoTool(BaseTool):
     async def _arun(
         self,
         include_profile: bool = True,
+        note_action: str = "peek",
+        max_notes: int = 1,
         state: dict[str, Any] | None = None,
     ) -> str:
         envelope = _envelope_from_state(state)
@@ -42,11 +45,16 @@ class LifeInfoTool(BaseTool):
             thread_id,
             max_age_seconds=LIFE_NOTE_MAX_AGE_SECONDS,
         )
-        note = await self._state_store.consume_life_note(thread_id)
         profile = (
-            await self._state_store.get_life_profile(thread_id)
+            await self._state_store.get_life_profile()
             if include_profile
             else ""
+        )
+        notes = await _resolve_notes(
+            self._state_store,
+            thread_id,
+            note_action=str(note_action or "peek").strip().lower(),
+            max_notes=max_notes,
         )
 
         lines: list[str] = []
@@ -54,11 +62,17 @@ class LifeInfoTool(BaseTool):
             lines.append("LIFE profile:")
             lines.append(profile or "None.")
 
-        lines.append("Current LIFE note:")
-        if note is not None:
-            lines.append(_note_text(note))
-        else:
-            lines.append("None.")
+        if note_action != "skip":
+            label = (
+                "Consumed LIFE note:"
+                if str(note_action or "").strip().lower() == "consume"
+                else "Pending LIFE notes:"
+            )
+            lines.append(label)
+            if notes:
+                lines.extend(f"- {_note_text(note)}" for note in notes)
+            else:
+                lines.append("None.")
 
         return "\n".join(lines)
 
@@ -92,3 +106,25 @@ def _resolve_effective_thread_id(envelope: MessageEnvelope) -> str:
 
 def _note_text(note: LifeNote) -> str:
     return str(note.content or "").strip() or "None."
+
+
+async def _resolve_notes(
+    state_store: StateStore,
+    thread_id: str,
+    *,
+    note_action: str,
+    max_notes: int,
+) -> list[LifeNote]:
+    limit = max(1, min(3, int(max_notes)))
+    if note_action == "skip":
+        return []
+    if note_action == "consume":
+        notes: list[LifeNote] = []
+        for _ in range(limit):
+            note = await state_store.consume_life_note(thread_id)
+            if note is None:
+                break
+            notes.append(note)
+        return notes
+    notes = await state_store.get_life_notes(thread_id)
+    return notes[:limit]

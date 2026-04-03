@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kayori Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="topbar-left">
+        <p class="eyebrow">Runtime Monitor</p>
+        <h1 class="title">Kayori Dashboard</h1>
+      </div>
+      <div class="topbar-right">
+        <input id="token" class="token" type="password" placeholder="Bearer token for API routes">
+        <div id="status" class="status">Idle</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="panel sidebar">
+        <h2 class="section-title">Threads</h2>
+        <div id="threads" class="thread-list"></div>
+      </aside>
+
+      <main class="main">
+        <section class="cards cards-primary">
+          <article class="panel card card-mood">
+            <h2 class="section-title">Mood</h2>
+            <div id="mood"></div>
+          </article>
+
+          <article class="panel card card-notes">
+            <h2 class="section-title">Life Notes</h2>
+            <div id="life-notes"></div>
+          </article>
+        </section>
+
+        <section class="cards cards-secondary">
+          <article class="panel card card-history">
+            <h2 class="section-title">History</h2>
+            <div id="history"></div>
+          </article>
+
+          <article class="panel logs">
+            <h2 class="section-title">Logs</h2>
+            <div id="logs" class="log-list"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

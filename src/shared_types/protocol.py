@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
-from src.shared_types.models import MessagesHistory, MoodState, MessageSource
 from langchain_core.messages import BaseMessage
 
 from src.shared_types.models import (
-    # LocationState,
+    InteractionState,
     MessageEnvelope,
     LifeNote,
     MoodState,
     OutboundMessage,
 )
-from src.shared_types.types import (
-    # ToolAuditEvent,
-    Trigger,
-)
+from src.shared_types.models import MessagesHistory, MessageSource
+from src.shared_types.types import Trigger
 
 
 @runtime_checkable
@@ -74,10 +71,15 @@ class StateStore(Protocol):
 
     async def list_threads(self) -> list[str]: ...
 
-    async def get_life_profile(self, thread_id: str) -> str: ...
+    async def get_interaction_state(self, thread_id: str) -> InteractionState: ...
 
-    async def replace_life_profile(
-        self, thread_id: str, profile: str) -> None: ...
+    async def set_interaction_state(
+        self, thread_id: str, state: InteractionState
+    ) -> None: ...
+
+    async def get_life_profile(self) -> str: ...
+
+    async def replace_life_profile(self, profile: str) -> None: ...
 
     async def get_life_notes(self, thread_id: str) -> list[LifeNote]: ...
 
@@ -88,18 +90,6 @@ class StateStore(Protocol):
 
     async def prune_life_notes(
         self, thread_id: str, *, max_age_seconds: float) -> int: ...
-
-    # async def get_live_location(self) -> LocationState: ...
-    # async def set_live_location(self, location: LocationState) -> None: ...
-    # async def get_pinned_location(self) -> LocationState: ...
-    # async def set_pinned_location(self, location: LocationState) -> None: ...
-
-
-# @runtime_checkable
-# class MemoryConsolidator(Protocol):
-#     async def consolidate(self, *, episode_limit: int) -> None:
-#         ...
-
 
 @runtime_checkable
 class EpisodicMemoryStore(Protocol):
@@ -215,19 +205,13 @@ class SchedulerBackend(Protocol):
 
 
 __all__ = [
-    # "CompanionStateStore",
-    # "GoalTaskBrain",
     "InputAdapter",
     "SchedulerBackend",
-    # "MemoryConsolidator",
     "MessageBus",
     "OutputAdapter",
     "EpisodicMemoryBackend",
     "EpisodicMemoryBackendRecord",
     "EpisodicMemorySearchResult",
     "EpisodicMemoryStore",
-    # "ProactiveKindStrategy",
-    # "ProactiveMessagingPolicy",
     "StateStore",
-    # "ToolAuditLogger",
 ]

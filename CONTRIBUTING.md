@@ -10,7 +10,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to keep our com
 
 ### Reporting Bugs
 
-1. Check if the bug has already been reported in [Issues](https://github.com/yourusername/kayori_v2/issues)
+1. Check if the bug has already been reported in [Issues](https://github.com/SamTheTechi/kayori_v2/issues)
 2. If not, create a new issue with:
    - A clear, descriptive title
    - Steps to reproduce the issue
@@ -46,7 +46,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to keep our com
 
 1. Clone your fork:
    ```bash
-   git clone https://github.com/yourusername/kayori_v2.git
+   git clone https://github.com/SamTheTechi/kayori_v2.git
    cd kayori_v2
    ```
 

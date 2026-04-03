@@ -1,155 +1,205 @@
 # Episodic Memory
 
-This document explains how episodic memory works in the current runtime.
+Long-term fact storage with semantic search.
 
-## Purpose
+## What It Does
 
-`EpisodicMemoryStore` in
-[`src/core/episodic_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/episodic_memory.py)
-is the long-term fact memory layer.
+Stores durable facts about users and retrieves relevant ones during conversations:
+- 💾 Remembers facts (name, preferences, goals)
+- 🔍 Finds relevant memories via semantic search
+- 🧹 Automatically cleans up old/weak memories
+- 📂 Categorizes facts (identity, preference, relationship, etc.)
 
-Its job is to:
+## How It Works
 
-- store durable facts about the user or relationship,
-- retrieve the most relevant facts for the current turn,
-- and trim stored memory when the backend grows too large.
+### Three Operations
 
-It is intentionally backend-agnostic. Storage and search are delegated to an
-`EpisodicMemoryBackend`.
+**1. remember()** - Store a fact
+```python
+await memory.remember(
+    thread_id="user123",
+    fact="User loves Python",
+    source="conversation",
+    category="preference",
+    importance=4,
+    confidence=0.9,
+    tags=["programming", "python"]
+)
+```
 
-## High-Level API
+**2. recall()** - Find relevant facts
+```python
+facts = await memory.recall(
+    query="What does the user like?",
+    limit=3,
+    thread_id="user123"
+)
+# Returns top 3 relevant facts ranked
+```
 
-The store exposes three main operations:
+**3. compact()** - Cleanup old facts
+```python
+await memory.compact(
+    thread_id="user123",
+    max_episodes=250  # Keep max 250 facts
+)
+```
 
-- `remember(...)`
-- `recall(...)`
-- `compact(...)`
+## Fact Structure
 
-This keeps the runtime-facing interface small.
-
-## Remember
-
-`remember(...)` takes a fact payload and normalizes it into a stored record.
-
-Current fields:
-
-- `fact`
-- `source`
-- `category`
-- `importance`
-- `confidence`
-- `tags`
-- `context`
-
-The store then writes that record to the backend as:
-
-- metadata for exact stored values
-- a rendered text blob for semantic search
-
-That rendered text includes:
-
-- fact
-- context
-- category
-- tags
-- source
-
-This design keeps the backend simple while still letting vector search work on
-more than just the raw fact string.
-
-## Recall
-
-`recall(query, limit, min_score)` retrieves candidate records from the backend
-and re-ranks them in the store layer.
-
-The current ranking combines:
-
-- backend relevance score
-- importance
-- confidence
-
-The weighting is intentionally simple:
-
-- backend score gets most of the weight
-- importance boosts durable memories
-- confidence prevents uncertain facts from ranking too highly
-
-This is why the store returns better results than a pure backend similarity
-query alone.
-
-## Compact
-
-`compact(...)` limits how many stored episodic records remain in the backend.
-
-The current eviction logic uses:
-
-- age
-- importance
-- confidence
-
-Older and weaker records are deleted first. More important and more confident
-records are kept longer.
-
-This is separate from conversation-history compaction. Here the store is
-compacting long-term facts, not chat messages.
+```python
+{
+    "id": "FM-abc123",
+    "timestamp": "2026-04-04T10:30:00+00:00",
+    "fact": "User is learning Python",
+    "source": "conversation",
+    "category": "preference",
+    "importance": 4,          # 1-5 scale
+    "confidence": 0.9,        # 0.0-1.0
+    "tags": ["programming"],
+    "context": "Mentioned during chat"
+}
+```
 
 ## Categories
 
-Allowed fact categories are:
+- `identity` - Who the user is
+- `preference` - What they like
+- `relationship` - Connection to assistant
+- `profile` - Background info
+- `schedule` - Time-based info
+- `goal` - What they're working toward
+- `possession` - What they have
+- `misc` - Everything else
 
-- `identity`
-- `preference`
-- `relationship`
-- `profile`
-- `schedule`
-- `goal`
-- `possession`
-- `misc`
+## Retrieval Ranking
 
-Unknown categories are normalized to `misc`.
+Facts ranked by combining:
+```python
+score = (
+    backend_score * 0.7 +      # Vector similarity (70%)
+    importance * 0.2 +         # Importance score (20%)
+    confidence * 0.1           # Confidence (10%)
+)
+```
 
-## Backend Split
+**Why this works:**
+- Semantic search finds related facts
+- Importance boosts durable memories
+- Confidence prevents uncertain facts from ranking high
 
-The store depends on the backend protocol from
-[`src/shared_types/protocol.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/shared_types/protocol.py),
-not on Pinecone or Redis directly.
+## Compaction (Cleanup)
 
-Current backend implementations live in:
+When memory exceeds limit (default 250 facts):
 
-- [`src/adapters/memory/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/adapters/memory/in_memory.py)
-- [`src/adapters/memory/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/adapters/memory/redis.py)
-- [`src/adapters/memory/pinecone.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/adapters/memory/pinecone.py)
+**Eviction score combines:**
+- **Age**: Older facts more likely to delete
+- **Weakness**: Low importance + confidence
+- **Formula**: `(age * 0.7) + (weakness * 0.3)`
 
-That means higher-level runtime code can keep using one store interface while
-changing storage backends underneath.
+**Process:**
+1. Sort facts by eviction score
+2. Delete lowest-scoring facts
+3. Keep most important/confident/recent
 
-## Runtime Use
+## Backend Implementation
 
-The orchestrator currently uses episodic memory in two places:
+Uses **RedisVL** (Redis Vector Library):
+- HNSW index for vector similarity
+- BAAI/bge-small-en-v1.5 embeddings (768 dims)
+- Stored as Redis hashes with vector field
 
-- `recall(...)` before reply generation
-- `remember(...)` indirectly through conversation contraction when old history
-  is summarized into durable facts
+```python
+memory_backend = RedisEpisodicMemory(
+    redis_client=sync_redis,
+    embedding=FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5"),
+    dimension=768
+)
+```
 
-This keeps long-term memory connected to both live chat and delayed
-consolidation.
+## Runtime Usage
 
-## Tradeoffs
+**Orchestrator recalls before each turn:**
+```python
+facts = await episodic_memory.recall(
+    query=user_message,
+    limit=2,
+    thread_id=thread_id
+)
+# Pass to agent for context
+```
 
-### Good Parts
+**Conversation contraction extracts facts:**
+```python
+# When compacting history
+for fact in extracted_facts:
+    await episodic_memory.remember(
+        thread_id=thread_id,
+        fact=fact["fact"],
+        source="conversation",
+        category=fact["category"],
+        importance=fact["importance"]
+    )
+```
 
-- backend-agnostic API
-- small runtime-facing surface
-- retrieval ranking is better than raw vector similarity alone
-- durable fact categories fit companion-style memory well
+## Pros and Cons
 
-### Current Limits
+### ✅ Strengths
 
-- record shape is still plain dicts, not stricter models
-- ranking weights are fixed in code
-- no dedupe layer beyond record id uniqueness
+**Semantic Search**
+- Finds related facts, not exact matches
+- Better than keyword search
+- Understands meaning
+
+**Smart Ranking**
+- Combines similarity + importance + confidence
+- Important facts stay accessible
+- Uncertain facts rank lower
+
+**Automatic Cleanup**
+- Prevents unbounded growth
+- Deletes old/weak facts first
+- Keeps memory efficient
+
+**Backend Agnostic**
+- Protocol-based design
+- Works with Redis or in-memory
+- Easy to swap storage
+
+**Categorization**
+- Organized fact types
+- Useful for filtering
+- Clear semantics
+
+### ❌ Limitations
+
+**No Deduplication**
+- Similar facts stored separately
+- Can have duplicates
+- No merging logic
+
+**Fixed Ranking Weights**
+- 70/20/10 hardcoded
+- No learning from feedback
+- May not suit all use cases
+
+**Vector Search Memory**
+- 768 dims × 250 facts = ~1MB RAM
+- Grows with fact count
+- Can hit Redis memory limits
+
+**Simple Categories**
+- Manual categorization
+- No auto-classification
+- "misc" becomes catch-all
+
+**Record Shape**
+- Plain dicts, not strict models
+- No validation
+- Easy to misuse
+
+---
 
 ## File Reference
 
-The implementation described here lives in
-[`src/core/episodic_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/episodic_memory.py).
+[`src/core/episodic_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/episodic_memory.py)

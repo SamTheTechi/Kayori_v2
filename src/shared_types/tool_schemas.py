@@ -41,6 +41,19 @@ class LifeInfoToolArgs(_InjectedStateArgs):
         default=True,
         description="Whether to include the authored LIFE profile in the result.",
     )
+    note_action: Literal["peek", "consume", "skip"] = Field(
+        default="peek",
+        description=(
+            "How to handle pending LIFE notes: 'peek' reads without removing, "
+            "'consume' reads and removes one, 'skip' omits notes."
+        ),
+    )
+    max_notes: int = Field(
+        default=1,
+        ge=1,
+        le=3,
+        description="Maximum number of pending LIFE notes to return.",
+    )
 
 
 class UserDeviceToolArgs(_InjectedStateArgs):

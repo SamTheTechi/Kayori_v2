@@ -11,6 +11,7 @@ from redis.asyncio import Redis as AsyncRedis
 from redis import Redis as SyncRedis
 
 from src.adapters.audio.stt import WhisperSttAdapter
+from src.adapters.http.dashboard import register_dashboard_routes
 from src.adapters.http.logs import register_logs_routes
 from src.adapters.http.metrics import register_metrics_routes
 from src.adapters.http.ping import register_ping_routes
@@ -67,6 +68,8 @@ async def _main() -> None:
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
     groq_api_key = str(os.getenv("API_KEY", "")).strip()
+    redis_url = str(os.getenv("REDIS_URL", "redis://localhost:6379")
+                    ).strip() or "redis://localhost:6379"
 
     webhook_bearer_token = "123"
     tts_base_url = "http://localhost:5050/v1"
@@ -89,8 +92,8 @@ async def _main() -> None:
         bearer_token=webhook_bearer_token,
     )
 
-    async_redis = AsyncRedis.from_url("redis://localhost:6379")
-    sync_redis = SyncRedis.from_url("redis://localhost:6379")
+    async_redis = AsyncRedis.from_url(redis_url)
+    sync_redis = SyncRedis.from_url(redis_url)
     bus = RedisMessageBus(async_redis)
     state = RedisStateStore(async_redis)
 
@@ -163,6 +166,7 @@ async def _main() -> None:
     )
     life_agent = LifeAgentService(
         model=chat_model2,
+        tools=[TavilySearch(max_results=3, topic="general")],
     )
 
     mood_engine = MoodEngine(
@@ -206,6 +210,7 @@ async def _main() -> None:
     input_tasks: list[asyncio.Task[None]] = []
 
     await output_dispatcher.start()
+    register_dashboard_routes(webhook_runtime)
     register_ping_routes(webhook_runtime)
     register_logs_routes(webhook_runtime)
     register_metrics_routes(webhook_runtime, state)
@@ -213,16 +218,24 @@ async def _main() -> None:
     await scheduler.start()
 
     try:
-        # await scheduler.push(
-        #     Trigger(
-        #         trigger_type=TriggerType.PRECISE,
-        #         source=MessageSource.LIFE,
-        #         content="Send a warm one-minute check-in message to the user.",
-        #         interval_seconds=10,
-        #         repeat=True
-        #     )
-        # )
-        #
+        await scheduler.push(
+            Trigger(
+                trigger_type=TriggerType.PRECISE,
+                source=MessageSource.LIFE,
+                interval_seconds=20,
+                repeat=True
+            )
+        )
+        await scheduler.push(
+            Trigger(
+                trigger_type=TriggerType.FUZZY,
+                source=MessageSource.PROACTIVE,
+                interval_seconds=60 * 60 * 4,
+                fuzzy_seconds=60 * 60 * 2,
+                repeat=True
+            )
+        )
+
         for adapter in inputs:
             input_tasks.append(
                 asyncio.create_task(
@@ -349,23 +362,18 @@ async def _seed_life_profile_if_empty(state: RedisStateStore) -> None:
     if not profile_path:
         return
 
-    profile_text = _read_profile_file(profile_path)
+    try:
+        profile_text = Path(profile_path).read_text(encoding="utf-8").strip()
+    except Exception:
+        return
+
     if not profile_text:
         return
 
-    thread_id = str(os.getenv("FORCE_THREAD_ID", "")).strip() or "global"
-    existing_profile = await state.get_life_profile(thread_id)
-    if existing_profile:
+    if await state.get_life_profile():
         return
 
-    await state.replace_life_profile(thread_id, profile_text)
-
-
-def _read_profile_file(path: str) -> str:
-    try:
-        return Path(path).read_text(encoding="utf-8").strip()
-    except Exception:
-        return ""
+    await state.replace_life_profile(profile_text)
 
 
 if __name__ == "__main__":

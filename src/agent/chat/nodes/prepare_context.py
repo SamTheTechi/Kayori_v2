@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from src.shared_types.models import EMOTIONS, MOOD_NEUTRAL, MoodState
+from src.shared_types.models import EMOTIONS, MOOD_NEUTRAL, MessageSource, MoodState
 from src.shared_types.types import AgentGraphState
 from src.templates.chat_template import private_template
 
@@ -13,12 +13,37 @@ from src.templates.chat_template import private_template
 def build_prepare_context_node():
     async def prepare_context_node(state: AgentGraphState) -> dict[str, Any]:
         content = str(state.get("content") or "").strip()
-        if not content:
+        envelope = state.get("envelope")
+        if not content and not (
+            envelope is not None and envelope.source == MessageSource.PROACTIVE
+        ):
             return {"reply_text": "", "messages": []}
 
         history = list(state.get("messages") or [])
         episodic = _format_episodic(list(state.get("episodic") or []))
-        messages: list[BaseMessage] = [*history, HumanMessage(content=content)]
+        messages: list[BaseMessage] = list(history)
+        if envelope is not None and envelope.source == MessageSource.PROACTIVE:
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "This is a proactive outreach moment, not a user message. "
+                        "Use the instruction below as an internal trigger only. "
+                        "If it helps you avoid stale or generic outreach, use "
+                        "`life_info_tool` for private continuity or TavilySearch for "
+                        "fresh real-world texture before you write the message."
+                    )
+                )
+            )
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "Send one short natural check-in first. Keep it simple, human, "
+                        "and self-started."
+                    )
+                )
+            )
+        else:
+            messages.append(HumanMessage(content=content))
         mood_values = _all_mood_values(state.get("mood"))
         current_time = datetime.now().astimezone().isoformat(timespec="seconds")
 

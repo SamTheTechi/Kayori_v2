@@ -1,50 +1,113 @@
 # Kayori v2 Documentation
 
-Welcome to the Kayori v2 documentation!
+An intelligent, multi-platform AI companion with emotional awareness and long-term memory.
 
-## What is Kayori v2?
+## What is Kayori?
 
-Kayori v2 is an intelligent conversational AI agent that connects to Discord, Telegram, and webhooks. It provides:
+Kayori is a conversational AI agent that:
 
-- **Natural Conversations** - ReAct-based reasoning with context-aware responses
-- **Tool Execution** - Weather lookup, Spotify control, reminders, web search, and MCP tools
-- **Emotional Intelligence** - Mood analysis across fast and long-term emotion layers
-- **Memory Systems** - Conversation history + long-term episodic memory (Pinecone/Neo4j)
-- **Proactive Behavior** - Scheduler-driven precise, fuzzy, and life-style triggers
-- **Audio Support** - Speech-to-text (Whisper) and text-to-speech (EdgeTTS)
+- 💬 **Converses naturally** across Discord, Telegram, and webhooks
+- 🧠 **Remembers conversations** via vector-based episodic memory
+- 💖 **Tracks emotions** across 10 mood dimensions
+- 🎵 **Controls Spotify**, sets reminders, searches the web
+- ⏰ **Acts proactively** with scheduled background tasks
+- 🎙️ **Supports voice** via Whisper STT and EdgeTTS
 
 ## Quick Start
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/kayori_v2.git
-cd kayori_v2
-
-# Install dependencies
+# Install
 uv sync
 
-# Configure environment
-cp .env.example .env
+# Configure
+cp example.env .env
 # Edit .env with your API keys
 
-# Run the bot
-python examples/main.py
+# Run
+python main.py
 ```
 
-## Documentation Sections
+See [Getting Started](getting-started.md) for detailed setup.
 
-- [Getting Started](getting-started.md) - Setup, environment, and running locally
-- [Architecture](architecture.md) - System design, components, and message flow
-- [Scheduler](scheduler.md) - Trigger model, scheduling behavior, tradeoffs, and examples
-- [Mood Engine](mood-engine.md) - Emotional state model, update rules, and design reasoning
+---
 
-## Architecture Overview
+## Documentation
 
-![Architecture Flow](../flow.png)
+### Core Concepts
 
-**Message Flow:** `Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response`
+- **[Architecture](architecture.md)** - System design, components, pros/cons
+- **[Agent System](agent.md)** - Chat and Life agents
+- **[Mood Engine](mood-engine.md)** - Emotional intelligence
+- **[Episodic Memory](episodic-memory.md)** - Long-term fact storage
+- **[Scheduler](scheduler.md)** - Proactive behavior
+- **[Tools](tools.md)** - Spotify, reminders, search, calendar
+
+### Adapters
+
+- **[Adapter Overview](adapters/overview.md)** - The pluggable architecture
+- **[Input Adapters](adapters/input.md)** - Discord, Telegram, Webhook, Console
+- **[Output Adapters](adapters/output.md)** - Response routing
+- **[Backend Adapters](adapters/backends.md)** - Redis storage and infrastructure
+
+### Reference
+
+- **[Orchestrator](orchestrator.md)** - Runtime coordination
+- **[Conversation Contraction](conversation-contraction.md)** - History management
+- **[Output Sink](output-sink.md)** - Response routing logic
+
+---
+
+## Key Features
+
+### Emotional Intelligence
+
+Kayori tracks mood across 10 dimensions:
+- **Fast emotions**: Affection, Amused, Curious, Concerned, Disgusted, Embarrassed, Frustrated
+- **Long emotions**: Trust, Attachment, Confidence
+
+Emotions influence responses and evolve over time.
+
+### Long-Term Memory
+
+- Stores important facts about you
+- Finds relevant memories via semantic search
+- Automatically extracts facts from conversations
+- Compacts old memories to stay efficient
+
+### Proactive Behavior
+
+- Scheduled background tasks
+- Self-reflection on conversations
+- Automatic history cleanup
+- Customizable triggers
+
+---
+
+## Architecture at a Glance
+
+```
+Input → Message Bus → Orchestrator → Agent → Output
+(Discord)   (Redis)   (Coordinator) (LLM)  (Discord)
+(Telegram)                       (Tools)   (Telegram)
+(Webhook)                                  (Webhook)
+```
+
+Read the full [Architecture](architecture.md) doc for details.
+
+---
+
+## Tech Stack
+
+- **Python 3.13** with async/await
+- **LangGraph** for agent orchestration
+- **Redis** for state, memory, scheduling
+- **Groq** for LLM inference
+- **FastAPI** for webhook runtime
+
+---
 
 ## Getting Help
 
-- [GitHub Issues](https://github.com/yourusername/kayori_v2/issues) - Bug reports and feature requests
-- [Discussions](https://github.com/yourusername/kayori_v2/discussions) - Questions and community support
+- **[GitHub Issues](https://github.com/SamTheTechi/kayori_v2/issues)** - Bugs and features
+- **[Architecture Doc](architecture.md)** - System design overview
+- **[Getting Started](getting-started.md)** - Setup guide

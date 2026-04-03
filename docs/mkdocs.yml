@@ -30,11 +30,19 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Architecture: architecture.md
-  - Scheduler: scheduler.md
-  - MoodEngine: mood-engine.md
-  - Orchestrator: orchestrator.md
-  - Episodic Memory: episodic-memory.md
-  - Conversation Contraction: conversation-contraction.md
+  - Core Components:
+    - Orchestrator: orchestrator.md
+    - Agent System: agent.md
+    - Mood Engine: mood-engine.md
+    - Episodic Memory: episodic-memory.md
+    - Scheduler: scheduler.md
+    - Conversation Contraction: conversation-contraction.md
+  - Adapters:
+    - Overview: adapters/overview.md
+    - Input Adapters: adapters/input.md
+    - Output Adapters: adapters/output.md
+    - Backend Adapters: adapters/backends.md
+  - Tools: tools.md
   - Output Sink: output-sink.md
 
 plugins:

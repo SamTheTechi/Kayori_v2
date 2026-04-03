@@ -1,145 +1,229 @@
 # Conversation Contraction
 
-This document explains how older chat history is summarized and converted into
-episodic facts.
+Summarizes old chat history and extracts facts for long-term storage.
 
-## Purpose
+## What It Does
 
-`ConversationContractionService` in
-[`src/core/conversation_contraction.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/conversation_contraction.py)
-owns conversation-history compaction.
+Prevents context overflow by:
+- 📝 Summarizing older messages into compact summary
+- 💡 Extracting important facts to episodic memory
+- 🧹 Keeping recent messages raw for continuity
+- ⚡ Triggering after inactivity or when history gets too long
 
-Its job is to:
+## How It Works
 
-- detect when a thread should compact,
-- summarize older history into one synthetic message,
-- extract durable facts for episodic memory,
-- and write the compacted history back into the state store.
+### Two Methods
 
-This service is separate from the orchestrator so the compaction workflow has
-one clear home.
+**1. maybe_compact()** - Threshold gate
+```python
+# Only compacts if history > 12 messages
+await contraction.maybe_compact(
+    thread_id="user123",
+    state_store=state,
+    episodic_memory=memory
+)
+```
 
-## Public Methods
+**2. compact()** - Full compaction
+```python
+# Always compacts (bypasses threshold)
+await contraction.compact(
+    thread_id="user123",
+    state_store=state,
+    episodic_memory=memory
+)
+```
 
-The current public API is:
+### Compaction Process
 
-- `maybe_compact(...)`
-- `compact(...)`
+```
+1. Load full history
+2. Detect existing summary (if any)
+3. Split: old messages vs recent (keep last 4)
+4. LLM summarizes old messages + extracts facts
+5. Write facts to episodic memory
+6. Replace history with: [summary] + [recent 4 messages]
+```
 
-The lower-level LLM step is private:
+## Key Constants
 
-- `_contract_messages(...)`
+```python
+COMPACT_THRESHOLD = 12       # Trigger at 12 messages
+COMPACT_KEEP_RECENT = 4      # Keep last 4 messages raw
+```
 
-That split is intentional:
+## Example
 
-- `maybe_compact(...)` is the threshold gate
-- `compact(...)` is the full workflow
-- `_contract_messages(...)` is just the summarize-and-extract step
+**Before compaction (12 messages):**
+```
+User: Hi!
+Bot: Hello!
+User: I love Python
+Bot: Me too!
+... (8 more messages)
+User: What's your favorite library?
+```
 
-## High-Level Flow
+**After compaction:**
+```
+[System: Summary of first 8 messages...]
+User: What's your favorite library?
+Bot: I think...
+User: Tell me more
+Bot: Sure!
+```
 
-### `maybe_compact(...)`
+**Extracted facts:**
+```python
+[
+    {
+        "fact": "User loves Python",
+        "category": "preference",
+        "importance": 4,
+        "confidence": 0.9
+    }
+]
+```
 
-1. Read thread history length from the state store.
-2. If it is at or below the threshold, do nothing.
-3. If it is above the threshold, call `compact(...)`.
+## LLM Summarization
 
-Current threshold:
+The model receives:
+```
+Existing summary: (previous summary or empty)
+Messages:
+  user: Hi!
+  assistant: Hello!
+  ...
 
-- `COMPACT_THRESHOLD = 12`
+Output JSON:
+{
+  "summary": "User greeted bot, mentioned Python love...",
+  "facts": [
+    {
+      "fact": "User loves Python",
+      "category": "preference",
+      "importance": 4,
+      "confidence": 0.9,
+      "tags": ["programming"],
+      "context": "Mentioned in greeting"
+    }
+  ]
+}
+```
 
-### `compact(...)`
-
-1. Load the full stored message history.
-2. Detect whether the first message is already a compacted summary.
-3. Separate older messages from the last recent turns.
-4. Ask the model to produce:
-   - one refreshed running summary
-   - a list of episodic facts
-5. Write the facts into episodic memory.
-6. Replace the stored history with:
-   - one synthetic summary `SystemMessage`
-   - the last recent raw messages
-
-Current recent window:
-
-- `COMPACT_KEEP_RECENT = 4`
-
-That means the service keeps the last two user-assistant turns raw while
-compressing older context.
+**Why one call for both?**
+- Model already reading old messages
+- Avoids second pass
+- Efficient single LLM call
 
 ## Synthetic Summary Message
 
-The compacted summary is stored as a `SystemMessage` with:
-
+Stored as marked `SystemMessage`:
 ```python
-additional_kwargs={"kayori_compacted": True}
+SystemMessage(
+    content="Summary text...",
+    additional_kwargs={"kayori_compacted": True}
+)
 ```
 
-That marker lets the service detect and refresh the running summary later
-instead of repeatedly summarizing the summary as if it were normal dialogue.
-Using `SystemMessage` also avoids presenting the running summary to the model as
-if it were a prior spoken reply from Kayori.
+**Why SystemMessage?**
+- Not presented as bot's prior reply
+- Marker prevents re-summarizing
+- Clear separation from dialogue
 
-## LLM Step
+## When Compaction Happens
 
-The actual model call lives in `_contract_messages(...)`.
+**Two triggers:**
 
-It does three things:
+1. **After each chat turn** (maybe_compact)
+   - Only if history > 12 messages
+   - Immediate pressure relief
 
-1. render a plain-text transcript from the older message slice
-2. prompt the model using
-   [`src/templates/episodic_strength_template.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/templates/episodic_strength_template.py)
-3. parse JSON from the model response
+2. **After 30 min inactivity** (scheduled compact)
+   - Bypasses threshold
+   - Delayed cleanup
 
-The response is expected to contain:
+**Why both?**
+- Immediate: Prevents context overflow
+- Scheduled: Cleans up even short conversations
 
-- `summary`
-- `facts`
+## Runtime Usage
 
-Each fact is normalized before being written to episodic memory.
+From orchestrator:
+```python
+# After each chat turn
+await conversation_contraction.maybe_compact(
+    thread_id=thread_id,
+    state_store=state,
+    episodic_memory=episodic_memory
+)
 
-## Why Contraction Also Extracts Facts
+# When scheduled compact fires
+await conversation_contraction.compact(
+    thread_id=thread_id,
+    state_store=state,
+    episodic_memory=episodic_memory
+)
+```
 
-This service is intentionally doing two outputs from one model call:
+## Pros and Cons
 
-- summarized old conversation history
-- durable long-term facts
+### ✅ Strengths
 
-That is efficient because the model is already reading the same old messages.
-It avoids a second pass over the same history slice.
+**Dual Output**
+- Summary + facts from one call
+- Efficient single LLM invocation
+- No redundant processing
 
-## Runtime Use
+**Threshold Gate**
+- maybe_compact prevents unnecessary work
+- Only compacts when needed
+- Saves API costs
 
-The orchestrator currently uses this service in two ways:
+**Summary Refresh**
+- Detects existing summary
+- Updates instead of duplicating
+- Running summary stays current
 
-- after each chat turn:
-  - `maybe_compact(...)`
-- when a scheduled compact event fires:
-  - `compact(...)`
+**Recent Window**
+- Keeps last 4 messages raw
+- Maintains conversational continuity
+- Doesn't over-compress
 
-This gives both:
+**SystemMessage Marker**
+- Clear separation from dialogue
+- Prevents re-summarizing summary
+- Clean implementation
 
-- immediate pressure relief when the active window grows too large
-- delayed inactivity-based compaction
+### ❌ Limitations
 
-## Tradeoffs
+**JSON Parsing**
+- Relies on model outputting valid JSON
+- No strict schema validation
+- Can fail silently
 
-### Good Parts
+**Fixed Thresholds**
+- 12 messages may not suit all cases
+- No dynamic threshold based on complexity
+- One size fits all
 
-- one core service owns history contraction
-- summary and episodic facts come from the same pass
-- existing compacted summaries are refreshed instead of duplicated
-- keeps recent turns raw for continuity
+**Summary Quality**
+- Depends on LLM summarization
+- May lose nuance
+- No user control over what's kept
 
-### Current Limits
+**Transcript Assumptions**
+- Assumes plain text messages
+- Doesn't handle attachments well
+- Limited to human/assistant roles
 
-- output is still parsed from JSON text rather than a stricter typed schema
-- the compacted summary is still a synthetic message inside the history stream,
-  even though it now uses `SystemMessage` rather than `AIMessage`
-- the transcript renderer assumes plain human/assistant text messages
+**No User Feedback**
+- Users can't correct summaries
+- No way to mark facts as wrong
+- One-way extraction
+
+---
 
 ## File Reference
 
-The implementation described here lives in
-[`src/core/conversation_contraction.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/conversation_contraction.py).
+[`src/core/conversation_contraction.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/conversation_contraction.py)

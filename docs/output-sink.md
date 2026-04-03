@@ -1,120 +1,210 @@
 # Output Sink
 
-This document explains how outbound replies are routed to output adapters.
+Routes outbound messages to the right platforms.
 
-## Purpose
+## What It Does
 
-`OutputSink` in
-[`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/outputsink.py)
-is the shared outbound dispatcher.
+The output sink is the shared outbound dispatcher:
+- 📨 Selects which adapters receive each message
+- 🚀 Sends to one or many outputs concurrently
+- 🛡️ Isolates failures (one platform down ≠ all down)
+- 🔄 Manages adapter lifecycle (start/stop)
 
-Its job is to:
+## Two Routing Modes
 
-- start and stop output adapters,
-- choose which adapters should receive an outbound message,
-- send to one or many outputs,
-- log adapter failures without crashing the whole pipeline.
+### Direct Mode (Default)
 
-This keeps the orchestrator and tools from having to know about every specific
-output adapter directly.
+Routes back to **same platform** message came from:
 
-## High-Level API
+```
+Discord message → Discord response
+Telegram message → Telegram response
+```
 
-The sink exposes three operations:
+```python
+sink = OutputSink(outputs=outputs, mode="direct")
+```
 
-- `start()`
-- `stop()`
-- `send(message)`
+**How it works:**
+- Matches `message.source` to adapter's `route_source`
+- Discord source → Discord output adapter only
+- Keeps responses on originating platform
 
-The runtime uses it like any other output adapter.
+### Multi Mode
 
-## Routing Modes
+**Broadcasts** to all configured outputs:
 
-The sink supports two modes:
+```
+One message → Discord + Telegram + Webhook
+```
 
-- `direct`
-- `multi`
+```python
+sink = OutputSink(outputs=outputs, mode="multi")
+```
 
-### `direct`
+**Use cases:**
+- Testing multiple platforms
+- Mirroring conversations
+- Debugging adapters
 
-In direct mode, the sink chooses only adapters whose `route_source` matches the
-outbound message source.
+## How It Works
 
-Example:
+### Send Flow
 
-- a `telegram` source message is sent only to Telegram outputs
-- a `discord` source message is sent only to Discord outputs
+```
+1. Orchestrator builds OutboundMessage
+2. Calls sink.send(message)
+3. Sink selects target adapters
+4. Sends to all concurrently (asyncio.gather)
+5. Logs failures per adapter
+6. Returns (doesn't crash on failures)
+```
 
-This is the normal request-response mode.
+### Selection Logic
 
-### `multi`
+```python
+def _select_outputs(message):
+    if mode == "multi":
+        return all_outputs  # Broadcast
+    
+    # Direct mode: match source
+    return [
+        output for output in outputs
+        if output.route_source == message.source
+    ]
+```
 
-In multi mode, the sink returns all configured outputs.
+**Example:**
+- `source=DISCORD` → DiscordOutputAdapter only
+- `source=TELEGRAM` → TelegramOutputAdapter only
 
-That means one outbound message fan-outs to every adapter in the sink.
+## OutboundMessage Structure
 
-This is useful for:
+```python
+OutboundMessage(
+    source=MessageSource.DISCORD,       # Original source
+    content="Here's your answer!",       # Response text
+    channel_id="channel456",             # Where to send
+    target_user_id="user123",            # Who to reply to
+    reply_to_message_id="msg789",        # Thread reply (optional)
+    mention_author=True,                 # @mention user (optional)
+    metadata={...}                       # Extra data
+)
+```
 
-- broadcast-style testing
-- mirrored outputs
-- debugging multiple adapters at once
+## Lifecycle Management
 
-## Send Behavior
+```python
+# Start outputs in order
+await sink.start()
 
-When `send(...)` is called:
+# Stop outputs in reverse order
+await sink.stop()
+```
 
-1. the sink selects target adapters
-2. it calls all selected adapters concurrently
-3. it logs failures per adapter
-4. it does not crash the whole send because one adapter failed
+**Why reverse order?**
+- Teardown dependencies safely
+- Last started = first stopped
+- Prevents orphaned connections
 
-This is why the implementation uses `asyncio.gather(..., return_exceptions=True)`.
+## Error Handling
 
-## Empty / Missing Output Cases
+Uses `asyncio.gather(return_exceptions=True)`:
+- All adapters send concurrently
+- Failures caught and logged
+- One adapter failing doesn't stop others
+- System continues if Discord down, Telegram works
 
-If no outputs are configured:
+**Logging:**
+```python
+# No targets
+logger.warning("output_dropped_no_targets", ...)
 
-- `send(...)` returns immediately
+# Adapter failure
+logger.error("output_send_failed", ...)
+```
 
-If outputs exist but none match the current message:
+## Runtime Usage
 
-- the sink logs `output_dropped_no_targets`
+From orchestrator:
+```python
+# Build outbound message
+outbound = OutboundMessage(
+    source=envelope.source,
+    content=reply_text,
+    channel_id=envelope.channel_id,
+    target_user_id=envelope.target_user_id,
+    reply_to_message_id=envelope.message_id
+)
 
-That makes dropped outbound messages visible without throwing runtime errors.
+# Send via sink
+await output_sink.send(outbound)
+```
 
-## Lifecycle
+Tools also use the sink:
+```python
+# ReminderTool sends reminders through sink
+await self._output.send(reminder_message)
+```
 
-`start()` starts outputs in configured order.
+## Pros and Cons
 
-`stop()` stops outputs in reverse order.
+### ✅ Strengths
 
-That is a small but useful lifecycle detail because teardown usually wants to
-unwind dependencies in reverse order.
+**Simple Abstraction**
+- One interface for all outputs
+- Orchestrator doesn't know adapters
+- Clean separation
 
-## Runtime Use
+**Flexible Routing**
+- Direct mode for normal use
+- Multi mode for testing/broadcast
+- Easy to switch
 
-The orchestrator sends final replies through the sink.
+**Failure Isolation**
+- Concurrent sends
+- Per-adapter error catching
+- No cascade failures
 
-Some tools also depend on an output adapter-like interface, so the sink lets
-those tools reuse the same routing layer instead of writing directly to one
-specific platform adapter.
+**Lifecycle Management**
+- Ordered start/stop
+- Reverse teardown
+- Graceful shutdown
 
-## Tradeoffs
+**Visibility**
+- Dropped messages logged
+- Failures logged per adapter
+- Easy to debug
 
-### Good Parts
+### ❌ Limitations
 
-- small, clear abstraction
-- supports one-to-one and one-to-many routing
-- adapter failures are isolated and logged
-- the orchestrator only needs one outbound dependency
+**Simple Routing**
+- Only matches source
+- No complex rules
+- No priority/fallback
 
-### Current Limits
+**No Transformation**
+- Adapters receive raw message
+- No auto-formatting
+- Platform-specific handling manual
 
-- direct routing is based only on `message.source`
-- there is no richer policy layer for priority, fallback, or per-channel rules
-- the sink assumes all outputs can accept the same `OutboundMessage` shape
+**No Retries**
+- Failed sends just logged
+- No retry logic
+- No dead letter queue
+
+**Assumes Compatibility**
+- All outputs accept same shape
+- No capability checking
+- May fail on platform limits
+
+**Synchronous Within Async**
+- Each adapter's send() blocks
+- Slow adapter delays completion
+- No per-adapter timeout
+
+---
 
 ## File Reference
 
-The implementation described here lives in
-[`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/main/src/core/outputsink.py).
+[`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/outputsink.py)

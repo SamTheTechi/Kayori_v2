@@ -1,107 +1,147 @@
 # Getting Started
 
-This guide will help you get Kayori v2 up and running.
+Get Kayori v2 running in under 5 minutes.
 
 ## Prerequisites
 
-- Python 3.14+
-- uv (recommended) or pip
-- Groq API key (or other LLM provider)
-- Platform token (Discord or Telegram)
+- **Python 3.13** (strict requirement, 3.14 may work)
+- **uv** package manager (or pip)
+- **Redis** server (required for production)
+- **Groq API key** (for LLM)
+- **Platform token** (Discord or Telegram)
 
-## Installation
+## Quick Start
 
-### Using uv (Recommended)
+### 1. Install Dependencies
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/kayori_v2.git
+# Clone and setup
+git clone https://github.com/SamTheTechi/kayori_v2.git
 cd kayori_v2
 
-# Install dependencies
+# Install with uv (recommended)
 uv sync
-```
 
-### Using pip
-
-```bash
-git clone https://github.com/yourusername/kayori_v2.git
-cd kayori_v2
+# Or with pip
 pip install -e .
 ```
 
-## Configuration
-
-1. Copy the example environment file:
+### 2. Configure Environment
 
 ```bash
-cp .env.example .env
-```
+# Copy example env
+cp example.env .env
 
-2. Edit `.env` with your credentials:
+# Edit .env with your keys
+```
 
 **Minimum setup (Discord):**
 ```env
-# Required: LLM API key
 API_KEY=your_groq_api_key
-
-# Discord bot setup
-DISCORD_BOT_TOKEN=your_discord_bot_token
-DISCORD_USER_ID=your_discord_user_id
+DISCORD_BOT_TOKEN=your_discord_token
+DISCORD_USER_ID=your_user_id
 ```
 
 **Optional features:**
 ```env
-# Telegram (alternative to Discord)
+# Telegram
 TELEGRAM_BOT_TOKEN=your_telegram_token
-TELEGRAM_CHAT_ID=your_chat_id
 
-# Tool API keys
-WEATHER_API_KEY=your_weather_api_key
-TAVILY_API_KEY=your_tavily_api_key
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_secret
+# Tools
+TAVILY_API_KEY=
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+SPOTIFY_REDIRECT_URI=
 
-# Audio pipeline
-EDGE_TTS_BASE_URL=http://localhost:5050/v1
-EDGE_TTS_API_KEY=123
-
-# Webhook server
-ENABLE_WEBHOOK_INPUT=false
-WEBHOOK_SERVER_PORT=8080
-WEBHOOK_BEARER_TOKEN=123
+# Redis (defaults to localhost)
+REDIS_URL=redis://localhost:6379
 ```
 
-## Running the Bot
+### 3. Start Redis
 
 ```bash
-# Run with default Discord adapter
-python examples/main.py
+# Docker
+docker run -d -p 6379:6379 redis:latest
+
+# Or install locally
+# https://redis.io/docs/install/
 ```
+
+### 4. Run Kayori
+
+```bash
+python main.py
+```
+
+You should see connection logs. Send a message to your bot—it should respond!
+
+---
 
 ## Platform Setup
 
 ### Discord
 
-1. Go to https://discord.com/developers/applications
-2. Create a new application
-3. Create a bot and copy the token
-4. Enable Message Content intent
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create new application
+3. Create bot and copy token
+4. **Enable Message Content intent** (important!)
 5. Invite bot to your server
 6. Set `DISCORD_BOT_TOKEN` and `DISCORD_USER_ID` in `.env`
 
 ### Telegram
 
-1. Message @BotFather on Telegram
-2. Create a new bot
+1. Message [@BotFather](https://t.me/botfather) on Telegram
+2. Create new bot with `/newbot`
 3. Copy the bot token
 4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`
 
+---
+
+## What Happens When You Run Kayori
+
+```
+1. Load .env configuration
+2. Connect to Redis
+3. Initialize platforms (Discord/Telegram/Webhook)
+4. Create agents (Chat + Life)
+5. Start scheduler for proactive behavior
+6. Begin listening for messages
+```
+
+---
+
 ## Verification
 
-Once running, you should see connection logs. Send a message to your bot—it should respond!
+**Check logs for:**
+- ✅ Redis connection established
+- ✅ Discord/Telegram bot logged in
+- ✅ Scheduler started
+- ✅ Input adapters running
+
+**Test it:**
+Send a message to your bot. It should respond within a few seconds.
+
+---
+
+## Common Issues
+
+**"Redis connection refused"**
+- Make sure Redis is running: `redis-cli ping` should return `PONG`
+- Check `REDIS_URL` in `.env`
+
+**"Discord bot not responding"**
+- Verify `DISCORD_BOT_TOKEN` is correct
+- Enable **Message Content intent** in Discord Developer Portal
+- Check `DISCORD_USER_ID` matches your user ID
+
+**"No module named..."**
+- Run `uv sync` to install dependencies
+- Make sure you're in the project directory
+
+---
 
 ## Next Steps
 
-- Read the [Architecture](architecture.md) documentation
-- Check out the main [README](../README.md) for project overview
+- Read the [Architecture](architecture.md) to understand how it works
+- Check out [Tools](tools.md) to enable more features
+- Explore component docs for implementation details

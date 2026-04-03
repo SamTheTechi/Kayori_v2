@@ -12,7 +12,7 @@ EPISODIC_CATEGORIES = (
 )
 
 
-episodic_strength_template = ChatPromptTemplate.from_messages(
+memory_compaction_template = ChatPromptTemplate.from_messages(
     [
         (
             "system",
@@ -29,6 +29,8 @@ episodic_strength_template = ChatPromptTemplate.from_messages(
             "- Write one short running summary.\n"
             "- Use both inputs for the summary: the existing running summary and the new older raw conversation slice.\n"
             "- The summary should preserve continuity and reflect the updated state of the conversation.\n"
+            "- Keep it compact and intentionally incomplete, like a human remembering the shape of a conversation instead of every detail.\n"
+            "- Do not try to preserve every small detail; let minor points fade naturally.\n"
             "- Keep it short, useful, and easy to carry forward.\n\n"
             "Task 2: facts\n"
             "- Extract facts only from the new older raw conversation slice in this request.\n"
