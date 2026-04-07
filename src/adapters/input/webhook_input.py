@@ -19,7 +19,7 @@ class WebhookInputAdapter:
     runtime: WebhookRuntime
     bus: MessageBus
     stt: WhisperSttAdapter | None = None
-    name: str = "webhook-input"
+    name: str = "webhook"
 
     _registered: bool = field(default=False, init=False, repr=False)
     _stop_event: asyncio.Event = field(

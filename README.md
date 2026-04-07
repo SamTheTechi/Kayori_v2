@@ -13,7 +13,7 @@ Kayori is an intelligent conversational agent that connects to multiple platform
 - **Proactive Behavior** - Scheduler-driven actions, inactivity-based history compaction, and internal runtime events
 - **Audio Support** - Full speech-to-text (Whisper) and text-to-speech (EdgeTTS) pipeline
 
-Think of it as a personal AI assistant that lives in your chat platforms, remembers conversations, understands emotions, and can take actions on your behalf.
+Think of it as a personal AI assistant that lives in one primary chat platform plus webhook, remembers conversations, understands emotions, and can take actions on your behalf.
 
 ## Architecture Overview
 
@@ -33,7 +33,7 @@ Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response
 
 ## Features
 
-- **Multi-Platform**: Discord, Telegram, Webhook runtimes
+- **Primary Chat + Webhook**: Run with either Discord or Telegram as the main chat interface, with webhook always enabled
 - **Audio Pipeline**: Whisper STT + EdgeTTS
 - **Memory Systems**: Short-term state + Episodic memory with in-memory, Redis, and Pinecone backends
 - **Mood Engine**: Fast/long emotion model with classifier-driven deltas
@@ -47,10 +47,14 @@ Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response
 **Environment (.env):**
 ```env
 API_KEY=your_groq_api_key
+PRIMARY_CHAT_APP=discord
 DISCORD_BOT_TOKEN=your_discord_token
 DISCORD_USER_ID=your_user_id
 TELEGRAM_BOT_TOKEN=your_telegram_token
+WEBHOOK_BEARER_TOKEN=your_webhook_bearer_token
 ```
+
+`PRIMARY_CHAT_APP` must be either `discord` or `telegram`. Webhook stays enabled in both modes, and the inactive chat app does not need valid credentials.
 
 **Install:**
 ```bash

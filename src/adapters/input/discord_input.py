@@ -14,7 +14,7 @@ from src.shared_types.protocol import MessageBus
 class DiscordInputAdapter:
     runtime: DiscordRuntime
     bus: MessageBus
-    name: str = "discord-input"
+    name: str = "discord"
 
     _stop_event: asyncio.Event = field(
         default_factory=asyncio.Event, init=False, repr=False

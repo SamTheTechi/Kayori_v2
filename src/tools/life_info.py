@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
-from src.shared_types.models import LifeNote, MessageEnvelope
+from src.shared_types.models import LifeNote
 from src.shared_types.protocol import StateStore
-from src.shared_types.thread_identity import resolve_thread_id
 from src.shared_types.tool_schemas import LifeInfoToolArgs
 
 LIFE_NOTE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3
@@ -36,13 +34,9 @@ class LifeInfoTool(BaseTool):
         max_notes: int = 1,
         state: dict[str, Any] | None = None,
     ) -> str:
-        envelope = _envelope_from_state(state)
-        if envelope is None:
-            return "LIFE info is unavailable because no message context was provided."
+        del state
 
-        thread_id = _resolve_effective_thread_id(envelope)
         await self._state_store.prune_life_notes(
-            thread_id,
             max_age_seconds=LIFE_NOTE_MAX_AGE_SECONDS,
         )
         profile = (
@@ -52,7 +46,6 @@ class LifeInfoTool(BaseTool):
         )
         notes = await _resolve_notes(
             self._state_store,
-            thread_id,
             note_action=str(note_action or "peek").strip().lower(),
             max_notes=max_notes,
         )
@@ -80,37 +73,12 @@ class LifeInfoTool(BaseTool):
         raise NotImplementedError("Use async execution for life_info_tool.")
 
 
-def _envelope_from_state(state: dict[str, Any] | None) -> MessageEnvelope | None:
-    payload = dict(state or {})
-    envelope_raw = payload.get("envelope")
-    if isinstance(envelope_raw, MessageEnvelope):
-        return envelope_raw
-    if isinstance(envelope_raw, dict):
-        return MessageEnvelope.from_dict(envelope_raw)
-    return None
-
-
-def _resolve_effective_thread_id(envelope: MessageEnvelope) -> str:
-    forced_thread_id = str(os.getenv("FORCE_THREAD_ID", "")).strip()
-    explicit_thread_id = str(dict(envelope.metadata or {}).get("thread_id") or "").strip()
-    return (
-        forced_thread_id
-        or explicit_thread_id
-        or resolve_thread_id(
-            target_user_id=envelope.target_user_id,
-            channel_id=envelope.channel_id,
-            author_id=envelope.author_id,
-        )
-    )
-
-
 def _note_text(note: LifeNote) -> str:
     return str(note.content or "").strip() or "None."
 
 
 async def _resolve_notes(
     state_store: StateStore,
-    thread_id: str,
     *,
     note_action: str,
     max_notes: int,
@@ -121,10 +89,10 @@ async def _resolve_notes(
     if note_action == "consume":
         notes: list[LifeNote] = []
         for _ in range(limit):
-            note = await state_store.consume_life_note(thread_id)
+            note = await state_store.consume_life_note()
             if note is None:
                 break
             notes.append(note)
         return notes
-    notes = await state_store.get_life_notes(thread_id)
+    notes = await state_store.get_life_notes()
     return notes[:limit]

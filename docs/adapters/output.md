@@ -328,7 +328,8 @@ OUTPUT_SINK_MODE=direct  # or "multi"
 Enabled in `main.py`:
 
 ```python
-enabled_outputs = ["discord", "webhook"]
+PRIMARY_CHAT_APP = "discord"  # or "telegram"
+# Webhook output is always enabled alongside the primary chat app.
 ```
 
 ---

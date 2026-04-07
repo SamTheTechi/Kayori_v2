@@ -16,7 +16,7 @@ class TelegramInputAdapter:
     bus: MessageBus
     allowed_chat_ids: set[str] | None = None
 
-    name: str = "telegram-input"
+    name: str = "telegram"
     _stop_event: asyncio.Event = field(
         default_factory=asyncio.Event, init=False, repr=False
     )

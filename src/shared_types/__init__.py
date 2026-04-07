@@ -8,7 +8,6 @@ from src.shared_types.models import (
     MoodState,
     OutboundMessage,
 )
-from src.shared_types.thread_identity import resolve_thread_id
 from src.shared_types.protocol import (
     EpisodicMemoryBackend,
     EpisodicMemoryBackendRecord,
@@ -44,7 +43,6 @@ __all__ = [
     # "LocationState",
     "EMOTIONS",
     "MOOD_NEUTRAL",
-    "resolve_thread_id",
 
     # Protocols
     "MessageBus",

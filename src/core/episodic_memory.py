@@ -48,7 +48,6 @@ class EpisodicMemoryStore:
     async def remember(
         self,
         *,
-        thread_id: str | None = None,
         fact: str,
         source: str,
         category: str = "misc",
@@ -79,15 +78,12 @@ class EpisodicMemoryStore:
                 ]
             ),
             metadata=record,
-            namespace=self._namespace_for(thread_id),
+            namespace=self.namespace,
         )
 
         if self.max_episodes is not None:
             try:
-                await self.compact(
-                    thread_id=thread_id,
-                    max_episodes=self.max_episodes,
-                )
+                await self.compact(max_episodes=self.max_episodes)
             except Exception as exc:
                 print(f"[episodic-memory] compact failed: {exc}")
 
@@ -98,7 +94,6 @@ class EpisodicMemoryStore:
         query: str,
         limit: int = 3,
         *,
-        thread_id: str | None = None,
         min_score: float | None = None,
     ) -> list[dict[str, Any]]:
         query = self._clean_text(query, 600)
@@ -117,7 +112,7 @@ class EpisodicMemoryStore:
         results = await self.backend.search(
             query=query,
             limit=max(limit * 5, 20),
-            namespace=self._namespace_for(thread_id),
+            namespace=self.namespace,
         )
 
         ranked: list[tuple[float, dict[str, Any]]] = []
@@ -152,7 +147,6 @@ class EpisodicMemoryStore:
     async def compact(
         self,
         *,
-        thread_id: str | None = None,
         max_episodes: int | None = None,
     ) -> int:
         keep = self.max_episodes if max_episodes is None else max_episodes
@@ -160,7 +154,7 @@ class EpisodicMemoryStore:
             return 0
 
         keep = max(0, self._to_int(keep, 0))
-        namespace = self._namespace_for(thread_id)
+        namespace = self.namespace
         ids = await self.backend.list_ids(namespace=namespace)
         if len(ids) <= keep:
             return 0
@@ -332,12 +326,5 @@ class EpisodicMemoryStore:
     def _distance_to_similarity(distance: float) -> float:
         distance = max(0.0, float(distance))
         return 1.0 / (1.0 + distance)
-
-    def _namespace_for(self, thread_id: str | None) -> str:
-        suffix = self._clean_text(thread_id, 160)
-        if not suffix:
-            return self.namespace
-        return f"{self.namespace}:{suffix}"
-
 
 __all__ = ["EpisodicMemoryStore"]

@@ -8,8 +8,6 @@ from uuid import uuid4
 
 from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
 
-from src.shared_types.thread_identity import resolve_thread_id
-
 
 EMOTIONS = (
     "Affection",
@@ -273,20 +271,13 @@ class MessageEnvelope:
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat())
 
-    def thread_id(self, fallback_user_id: str | None = None) -> str:
-        return resolve_thread_id(
-            target_user_id=self.target_user_id,
-            channel_id=self.channel_id,
-            author_id=self.author_id,
-            fallback_user_id=fallback_user_id,
-        )
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "source": self.source.value,
             "content": self.content,
             "channel_id": self.channel_id,
             "author_id": self.author_id,
+            "message_id": self.message_id,
             "target_user_id": self.target_user_id,
             "metadata": self.metadata,
             "id": self.id,
@@ -300,6 +291,7 @@ class MessageEnvelope:
             content=str(data.get("content", "")).strip(),
             channel_id=_maybe_str(data.get("channel_id")),
             author_id=_maybe_str(data.get("author_id")),
+            message_id=_maybe_str(data.get("message_id")),
             target_user_id=_maybe_str(data.get("target_user_id")),
             metadata=dict(data.get("metadata") or {}),
             id=str(data.get("id") or uuid4().hex),
@@ -354,9 +346,9 @@ def _message_source_from_any(value: Any) -> MessageSource:
     if isinstance(value, MessageSource):
         return value
     try:
-        return MessageSource(str(value or MessageSource.INTERNAL.value).strip().lower())
+        return MessageSource(str(value or MessageSource.WEBHOOK.value).strip().lower())
     except Exception:
-        return MessageSource.INTERNAL
+        return MessageSource.WEBHOOK
 
 
 def _maybe_str(value: Any) -> str | None:

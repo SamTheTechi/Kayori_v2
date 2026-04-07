@@ -8,7 +8,8 @@ Get Kayori v2 running in under 5 minutes.
 - **uv** package manager (or pip)
 - **Redis** server (required for production)
 - **Groq API key** (for LLM)
-- **Platform token** (Discord or Telegram)
+- **Primary chat token** (Discord or Telegram)
+- **Webhook bearer token**
 
 ## Quick Start
 
@@ -38,15 +39,23 @@ cp example.env .env
 **Minimum setup (Discord):**
 ```env
 API_KEY=your_groq_api_key
+PRIMARY_CHAT_APP=discord
 DISCORD_BOT_TOKEN=your_discord_token
 DISCORD_USER_ID=your_user_id
+WEBHOOK_BEARER_TOKEN=your_webhook_token
+```
+
+**Minimum setup (Telegram):**
+```env
+API_KEY=your_groq_api_key
+PRIMARY_CHAT_APP=telegram
+TELEGRAM_BOT_TOKEN=your_telegram_token
+TELEGRAM_CHAT_ID=your_chat_id
+WEBHOOK_BEARER_TOKEN=your_webhook_token
 ```
 
 **Optional features:**
 ```env
-# Telegram
-TELEGRAM_BOT_TOKEN=your_telegram_token
-
 # Tools
 TAVILY_API_KEY=
 SPOTIFY_CLIENT_ID=
@@ -73,7 +82,7 @@ docker run -d -p 6379:6379 redis:latest
 python main.py
 ```
 
-You should see connection logs. Send a message to your bot—it should respond!
+You should see connection logs. Send a message to your selected primary chat bot, and webhook routes should also be available.
 
 ---
 
@@ -86,14 +95,14 @@ You should see connection logs. Send a message to your bot—it should respond!
 3. Create bot and copy token
 4. **Enable Message Content intent** (important!)
 5. Invite bot to your server
-6. Set `DISCORD_BOT_TOKEN` and `DISCORD_USER_ID` in `.env`
+6. Set `PRIMARY_CHAT_APP=discord`, `DISCORD_BOT_TOKEN`, and `DISCORD_USER_ID` in `.env`
 
 ### Telegram
 
 1. Message [@BotFather](https://t.me/botfather) on Telegram
 2. Create new bot with `/newbot`
 3. Copy the bot token
-4. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`
+4. Set `PRIMARY_CHAT_APP=telegram`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` in `.env`
 
 ---
 
@@ -102,7 +111,7 @@ You should see connection logs. Send a message to your bot—it should respond!
 ```
 1. Load .env configuration
 2. Connect to Redis
-3. Initialize platforms (Discord/Telegram/Webhook)
+3. Initialize the selected primary chat platform plus webhook
 4. Create agents (Chat + Life)
 5. Start scheduler for proactive behavior
 6. Begin listening for messages
@@ -114,7 +123,7 @@ You should see connection logs. Send a message to your bot—it should respond!
 
 **Check logs for:**
 - ✅ Redis connection established
-- ✅ Discord/Telegram bot logged in
+- ✅ Primary chat bot logged in
 - ✅ Scheduler started
 - ✅ Input adapters running
 
@@ -133,6 +142,14 @@ Send a message to your bot. It should respond within a few seconds.
 - Verify `DISCORD_BOT_TOKEN` is correct
 - Enable **Message Content intent** in Discord Developer Portal
 - Check `DISCORD_USER_ID` matches your user ID
+
+**"Telegram bot not responding"**
+- Verify `PRIMARY_CHAT_APP=telegram`
+- Verify `TELEGRAM_BOT_TOKEN` is correct
+- Check `TELEGRAM_CHAT_ID` matches your target chat
+
+**"Webhook auth failures"**
+- Verify `WEBHOOK_BEARER_TOKEN` is set in `.env`
 
 **"No module named..."**
 - Run `uv sync` to install dependencies

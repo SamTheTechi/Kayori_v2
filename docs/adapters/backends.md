@@ -11,7 +11,7 @@ Backend adapters provide infrastructure services: message queuing, state storage
 | Episodic Memory | RedisEpisodicMemory | InMemoryEpisodicMemory |
 | Scheduler | RedisSchedulerBackend | InMemorySchedulerBackend |
 
-**Note:** Production uses Redis for everything. In-memory adapters are commented out in `main.py`.
+**Note:** Production uses Redis for everything in the current runtime.
 
 ---
 
@@ -80,15 +80,15 @@ bus = RedisMessageBus(
 
 ```python
 class StateStore(Protocol):
-    async def get_mood(self, thread_id: str) -> MoodState: ...
-    async def set_mood(self, thread_id: str, mood: MoodState) -> None: ...
-    async def get_history(self, thread_id: str) -> MessagesHistory: ...
-    async def append_messages(self, thread_id: str, msgs: list) -> None: ...
-    async def replace_messages(self, thread_id: str, msgs: list) -> None: ...
+    async def get_mood(self) -> MoodState: ...
+    async def set_mood(self, mood: MoodState) -> None: ...
+    async def get_history(self) -> MessagesHistory: ...
+    async def append_messages(self, msgs: list) -> None: ...
+    async def replace_messages(self, msgs: list) -> None: ...
     async def get_life_profile(self) -> str: ...
     async def replace_life_profile(self, profile: str) -> None: ...
-    async def get_life_notes(self, thread_id: str) -> list[LifeNote]: ...
-    async def append_life_note(self, thread_id: str, note: LifeNote) -> None: ...
+    async def get_life_notes(self) -> list[LifeNote]: ...
+    async def append_life_note(self, note: LifeNote) -> None: ...
     # ... more methods
 ```
 
@@ -96,14 +96,14 @@ class StateStore(Protocol):
 
 **How it works:**
 - Stores state as JSON in Redis keys
-- Thread-isolated keys: `kayori:state:mood:{thread_id}`
+- Personal-agent keys without thread partitioning
 
 **Key Structure:**
 ```
-kayori:state:mood:{thread_id}       → MoodState JSON
-kayori:state:history:{thread_id}    → MessagesHistory JSON
+kayori:state:mood                   → MoodState JSON
+kayori:state:history                → MessagesHistory JSON
 kayori:state:life_profile           → Profile text
-kayori:state:life_notes:{thread_id} → LifeNote[] JSON
+kayori:state:life_notes             → LifeNote[] JSON
 ```
 
 ```python
@@ -112,7 +112,7 @@ state = RedisStateStore(redis_client=async_redis)
 
 **Pros:**
 ✅ Persistent across restarts  
-✅ Thread-isolated state  
+✅ Simple personal-agent state  
 ✅ Atomic operations  
 ✅ Fast key-value access  
 
@@ -390,7 +390,7 @@ REDIS_URL=redis://localhost:6379
 1. **Protocols enable swapping**: Core doesn't care about implementation
 2. **Redis is production standard**: All backends use it
 3. **In-memory exists for testing**: But commented out in main.py
-4. **Thread isolation via keys**: `{prefix}:{thread_id}` pattern
+4. **Personal-agent state is simple**: Redis keys no longer need thread partitioning
 5. **Persistence matters**: Survives restarts, restores state
 
 ---

@@ -1,12 +1,10 @@
 const tokenInput = document.getElementById("token");
 const statusNode = document.getElementById("status");
-const threadsNode = document.getElementById("threads");
 const moodNode = document.getElementById("mood");
 const lifeNotesNode = document.getElementById("life-notes");
 const historyNode = document.getElementById("history");
 const logsNode = document.getElementById("logs");
 
-let selectedThread = "";
 let loading = false;
 
 tokenInput.value = localStorage.getItem("kayori_dashboard_token") || "";
@@ -36,26 +34,6 @@ async function fetchJson(path) {
     throw new Error(`${response.status} ${detail}`);
   }
   return response.json();
-}
-
-function renderThreads(threads) {
-  if (!threads.length) {
-    threadsNode.innerHTML = '<div class="empty">No threads yet.</div>';
-    return;
-  }
-
-  threadsNode.innerHTML = threads.map((threadId) => {
-    const active = threadId === selectedThread ? " active" : "";
-    return `<button class="thread-btn${active}" data-thread="${escapeHtml(threadId)}">${escapeHtml(threadId)}</button>`;
-  }).join("");
-
-  threadsNode.querySelectorAll(".thread-btn").forEach((node) => {
-    node.addEventListener("click", () => {
-      selectedThread = node.dataset.thread || "";
-      renderThreads(threads);
-      loadThreadPanels();
-    });
-  });
 }
 
 function renderMood(data) {
@@ -93,7 +71,6 @@ function renderHistory(data) {
   const preview = messages.slice(-3).map(formatHistoryMessage).filter(Boolean).join("\n\n");
   setHtmlPreserveScroll(historyNode, `
     <div class="kv">
-      <div class="kv-row"><span>Thread</span><span class="mono">${escapeHtml(data.thread_id || selectedThread || "-")}</span></div>
       <div class="kv-row"><span>Messages</span><span class="mono">${count}</span></div>
     </div>
     <div class="history-preview">${escapeHtml(preview || "No recent messages.")}</div>
@@ -175,20 +152,12 @@ function setHtmlPreserveScroll(node, html, selector) {
   }
 }
 
-async function loadThreadPanels() {
-  if (!selectedThread) {
-    moodNode.innerHTML = '<div class="empty">Select a thread.</div>';
-    lifeNotesNode.innerHTML = '<div class="empty">Select a thread.</div>';
-    historyNode.innerHTML = '<div class="empty">Select a thread.</div>';
-    return;
-  }
-
-  const query = `?thread_id=${encodeURIComponent(selectedThread)}`;
+async function loadPanels() {
   try {
     const [mood, lifeNotes, history] = await Promise.all([
-      fetchJson(`/api/metrics/mood${query}`),
-      fetchJson(`/api/metrics/life-notes${query}`),
-      fetchJson(`/api/metrics/history${query}`),
+      fetchJson("/api/metrics/mood"),
+      fetchJson("/api/metrics/life-notes"),
+      fetchJson("/api/metrics/history"),
     ]);
     renderMood(mood);
     renderLifeNotes(lifeNotes);
@@ -207,22 +176,14 @@ async function loadDashboard() {
   loading = true;
 
   try {
-    const [threadsData, logsData] = await Promise.all([
-      fetchJson("/api/metrics/threads"),
+    const [logsData] = await Promise.all([
       fetchJson("/api/logs?limit=50"),
     ]);
 
-    const threads = Array.isArray(threadsData.threads) ? threadsData.threads : [];
-    if (!selectedThread || !threads.includes(selectedThread)) {
-      selectedThread = threads[0] || "";
-    }
-
-    renderThreads(threads);
     renderLogs(logsData);
-    await loadThreadPanels();
+    await loadPanels();
     setStatus("Live");
   } catch (error) {
-    showPanelError(threadsNode, error.message);
     showPanelError(moodNode, error.message);
     showPanelError(lifeNotesNode, error.message);
     showPanelError(historyNode, error.message);

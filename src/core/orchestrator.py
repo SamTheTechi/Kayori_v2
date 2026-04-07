@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 from datetime import UTC, datetime
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -19,19 +18,17 @@ from src.shared_types.protocol import (
     OutputAdapter,
     StateStore,
 )
-from src.shared_types.models import InteractionState, LifeNote, MessageEnvelope, MessageSource, OutboundMessage
+from src.shared_types.models import LifeNote, MessageEnvelope, MessageSource, OutboundMessage
 from src.shared_types.types import Trigger, TriggerType
-from src.shared_types.thread_identity import resolve_thread_id
 
 logger = get_logger("core.orchestrator")
 
 AGENT_WINDOW = 12
 MOOD_WINDOW = 4
 COMPACT_IDLE_SECONDS = 60 * 30
-COMPACT_TRIGGER_PREFIX = "compact:"
+COMPACT_TRIGGER_ID = "compact"
 LIFE_NOTE_MAX_AGE_SECONDS = 60 * 60 * 24 * 3
 MAX_PENDING_LIFE_NOTES = 3
-PROACTIVE_INTERVAL_SECONDS = 60 * 60 * 4
 
 
 @dataclass(slots=True)
@@ -50,34 +47,19 @@ class AgentOrchestrator:
         while True:
             envelope: MessageEnvelope = await self.bus.consume()
             try:
-                forced_thread_id = str(
-                    os.getenv("FORCE_THREAD_ID", "")).strip()
-                explicit_thread_id = str(
-                    dict(envelope.metadata or {}).get("thread_id") or ""
-                ).strip()
-                thread_id = (
-                    forced_thread_id
-                    or explicit_thread_id
-                    or resolve_thread_id(
-                        target_user_id=envelope.target_user_id,
-                        channel_id=envelope.channel_id,
-                        author_id=envelope.author_id,
-                    )
-                )
-
                 if envelope.source == MessageSource.LIFE:
-                    await self._handle_life(envelope, thread_id)
+                    await self._handle_life(envelope)
                     continue
 
                 if envelope.source == MessageSource.COMPACT:
-                    await self._handle_compact(envelope, thread_id)
+                    await self._handle_compact(envelope)
                     continue
 
                 if envelope.source == MessageSource.PROACTIVE:
-                    await self._handle_proactive(envelope, thread_id)
+                    await self._handle_proactive(envelope)
                     continue
 
-                await self._handle_chat(envelope, thread_id)
+                await self._handle_chat(envelope)
 
             except Exception as exc:
                 await logger.error(
@@ -93,16 +75,15 @@ class AgentOrchestrator:
                     error=exc,
                 )
 
-    async def _handle_life(self, envelope: MessageEnvelope, thread_id: str) -> None:
+    async def _handle_life(self, envelope: MessageEnvelope) -> None:
         await self.state_store.prune_life_notes(
-            thread_id,
             max_age_seconds=LIFE_NOTE_MAX_AGE_SECONDS,
         )
-        recent_life_notes = await self.state_store.get_life_notes(thread_id)
+        recent_life_notes = await self.state_store.get_life_notes()
         if len(recent_life_notes) >= MAX_PENDING_LIFE_NOTES:
             return
 
-        history = await self.state_store.get_history(thread_id)
+        history = await self.state_store.get_history()
         summary = _compacted_summary(history.all())
 
         life_profile = await self.state_store.get_life_profile()
@@ -110,7 +91,6 @@ class AgentOrchestrator:
         episodic = await self.episodic_memory.recall(
             query=content or "recent internal continuity",
             limit=3,
-            thread_id=thread_id,
         )
         if not summary and not life_profile and not episodic:
             return
@@ -124,59 +104,50 @@ class AgentOrchestrator:
         )
         if note:
             await self.state_store.append_life_note(
-                thread_id,
                 note=_life_note(note),
             )
 
-    async def _handle_compact(self, envelope: MessageEnvelope, thread_id: str) -> None:
+    async def _handle_compact(self, envelope: MessageEnvelope) -> None:
+        del envelope
         await self.conversation_contraction.compact(
-            thread_id=thread_id,
             state_store=self.state_store,
             episodic_memory=self.episodic_memory,
         )
 
-    async def _handle_proactive(self, envelope: MessageEnvelope, thread_id: str) -> None:
+    async def _handle_proactive(self, envelope: MessageEnvelope) -> None:
+        del envelope
         today = datetime.now(UTC).date().isoformat()
-        best_match: tuple[float, str, InteractionState] | None = None
+        interaction = await self.state_store.get_interaction_state()
+        if interaction.proactive_sent_day != today:
+            interaction.proactive_sent_day = today
+            interaction.proactive_sent_today = 0
 
-        for candidate_thread_id in await self.state_store.list_threads():
-            interaction = await self.state_store.get_interaction_state(candidate_thread_id)
-            if interaction.proactive_sent_day != today:
-                interaction.proactive_sent_day = today
-                interaction.proactive_sent_today = 0
+        if (
+            interaction.last_proactive_message_at
+            and (
+                not interaction.last_user_message_at
+                or interaction.last_user_message_at <= interaction.last_proactive_message_at
+            )
+        ):
+            interaction.ignored_proactive_count += 1
 
-            if (
-                interaction.last_proactive_message_at
-                and (
-                    not interaction.last_user_message_at
-                    or interaction.last_user_message_at <= interaction.last_proactive_message_at
-                )
-            ):
-                interaction.ignored_proactive_count += 1
+        mood = await self.state_store.get_mood()
+        score = (
+            float(mood.Trust)
+            + float(mood.Attachment)
+            + float(mood.Confidence)
+        ) / 3.0
+        cap = 0 if score < 0.58 else 1 if score < 0.68 else 2 if score < 0.78 else 3
 
-            mood = await self.state_store.get_mood(candidate_thread_id)
-            score = (
-                float(mood.Trust)
-                + float(mood.Attachment)
-                + float(mood.Confidence)
-            ) / 3.0
-            cap = 0 if score < 0.58 else 1 if score < 0.68 else 2 if score < 0.78 else 3
-
-            if (
-                interaction.last_route_source
-                and cap > 0
-                and interaction.proactive_sent_today < cap
-                and interaction.ignored_proactive_count < 2
-            ):
-                if best_match is None or score > best_match[0]:
-                    best_match = (score, candidate_thread_id, interaction)
-            else:
-                await self.state_store.set_interaction_state(candidate_thread_id, interaction)
-
-        if best_match is None:
+        if (
+            not interaction.last_route_source
+            or cap <= 0
+            or interaction.proactive_sent_today >= cap
+            or interaction.ignored_proactive_count >= 2
+        ):
+            await self.state_store.set_interaction_state(interaction)
             return
 
-        _, thread_id, interaction = best_match
         proactive_envelope = MessageEnvelope(
             source=MessageSource.PROACTIVE,
             content="",
@@ -185,31 +156,29 @@ class AgentOrchestrator:
             author_id=interaction.last_author_id,
             metadata={"route_source": interaction.last_route_source},
         )
-        await self.state_store.set_interaction_state(thread_id, interaction)
-        await self._handle_chat(proactive_envelope, thread_id)
+        await self.state_store.set_interaction_state(interaction)
+        await self._handle_chat(proactive_envelope)
 
-    async def _handle_chat(self, envelope: MessageEnvelope, thread_id: str) -> None:
+    async def _handle_chat(self, envelope: MessageEnvelope) -> None:
         content = (envelope.content or "").strip()
         if not content and envelope.source != MessageSource.PROACTIVE:
             return
 
-        mood = await self.state_store.get_mood(thread_id)
-        messages_for_agent = await self.state_store.get_agent_context(thread_id, AGENT_WINDOW)
+        mood = await self.state_store.get_mood()
+        messages_for_agent = await self.state_store.get_agent_context(AGENT_WINDOW)
         next_mood = mood
         if envelope.source != MessageSource.PROACTIVE:
-            messages_for_mood_analysis = await self.state_store.get_mood_context(thread_id, MOOD_WINDOW)
+            messages_for_mood_analysis = await self.state_store.get_mood_context(MOOD_WINDOW)
             delta = await self.mood_engine.analyze(
                 content=content,
                 messages=messages_for_mood_analysis,
-                thread_id=thread_id
             )
             next_mood = self.mood_engine.apply(mood, delta)
-            await self.state_store.set_mood(thread_id, next_mood)
+            await self.state_store.set_mood(next_mood)
 
         facts = await self.episodic_memory.recall(
             query=content,
             limit=2,
-            thread_id=thread_id,
         )
 
         reply_text = await self.agent.respond(
@@ -222,24 +191,21 @@ class AgentOrchestrator:
 
         if envelope.source == MessageSource.PROACTIVE:
             await self.state_store.append_messages(
-                thread_id,
                 [AIMessage(content=reply_text)]
             )
-            await self._record_proactive_send(thread_id)
+            await self._record_proactive_send()
         else:
             await self.state_store.append_messages(
-                thread_id,
                 [
                     HumanMessage(content=content),
                     AIMessage(content=reply_text)
                 ]
             )
-            await self._record_user_interaction(thread_id, envelope)
-        await self._reschedule_compact_trigger(thread_id)
+            await self._record_user_interaction(envelope)
+        await self._reschedule_compact_trigger()
 
         try:
             await self.conversation_contraction.maybe_compact(
-                thread_id=thread_id,
                 state_store=self.state_store,
                 episodic_memory=self.episodic_memory,
             )
@@ -247,7 +213,6 @@ class AgentOrchestrator:
             await logger.error(
                 "contraction_failed",
                 "Compaction failed.",
-                context={"thread_id": thread_id},
                 error=exc,
             )
 
@@ -285,15 +250,14 @@ class AgentOrchestrator:
                 error=exc,
             )
 
-    async def _reschedule_compact_trigger(self, thread_id: str) -> None:
-        trigger_id = f"{COMPACT_TRIGGER_PREFIX}{thread_id}"
+    async def _reschedule_compact_trigger(self) -> None:
+        trigger_id = COMPACT_TRIGGER_ID
         await self.scheduler.remove(trigger_id)
         await self.scheduler.push(
             Trigger(
                 trigger_type=TriggerType.PRECISE,
                 source=MessageSource.COMPACT,
                 interval_seconds=COMPACT_IDLE_SECONDS,
-                metadata={"thread_id": thread_id},
                 repeat=False,
                 _trigger_id=trigger_id,
             )
@@ -301,10 +265,9 @@ class AgentOrchestrator:
 
     async def _record_user_interaction(
         self,
-        thread_id: str,
         envelope: MessageEnvelope,
     ) -> None:
-        state = await self.state_store.get_interaction_state(thread_id)
+        state = await self.state_store.get_interaction_state()
         state.last_user_message_at = datetime.now(UTC).isoformat()
 
         state.last_route_source = envelope.source.value
@@ -313,15 +276,15 @@ class AgentOrchestrator:
         state.last_author_id = envelope.author_id
         if state.last_proactive_message_at:
             state.ignored_proactive_count = 0
-        await self.state_store.set_interaction_state(thread_id, state)
+        await self.state_store.set_interaction_state(state)
 
-    async def _record_proactive_send(self, thread_id: str) -> None:
-        state = await self.state_store.get_interaction_state(thread_id)
+    async def _record_proactive_send(self) -> None:
+        state = await self.state_store.get_interaction_state()
         now = datetime.now(UTC)
         state.last_proactive_message_at = now.isoformat()
         state.proactive_sent_today += 1
         state.proactive_sent_day = now.date().isoformat()
-        await self.state_store.set_interaction_state(thread_id, state)
+        await self.state_store.set_interaction_state(state)
 
     @staticmethod
     def _build_outbound(envelope: MessageEnvelope, content: str) -> OutboundMessage:

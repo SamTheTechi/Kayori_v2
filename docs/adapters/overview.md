@@ -280,8 +280,8 @@ inputs.append(MyCustomInput(bus=bus))
 From `main.py`:
 
 ```python
-enabled_inputs = ["discord", "webhook"]
-enabled_outputs = ["discord", "webhook"]
+PRIMARY_CHAT_APP = "discord"  # or "telegram"
+# Webhook input/output are always enabled.
 
 # All backends use Redis
 bus = RedisMessageBus(async_redis)
@@ -292,7 +292,7 @@ scheduler_backend = RedisSchedulerBackend(redis_client=async_redis)
 
 **Infrastructure Required:**
 - Redis server (single instance)
-- Discord bot token
+- One primary chat token (Discord or Telegram)
 - Webhook server (port 8080)
 
 ---

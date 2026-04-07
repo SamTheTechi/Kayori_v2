@@ -9,11 +9,11 @@ from src.shared_types.models import InteractionState, LifeNote, MoodState, Messa
 
 class InMemoryStateStore:
     def __init__(self) -> None:
-        self._moods: dict[str, MoodState] = {}
-        self._histories: dict[str, MessagesHistory] = {}
-        self._interaction_states: dict[str, InteractionState] = {}
-        self._life_profiles: dict[str, str] = {}
-        self._life_notes: dict[str, list[LifeNote]] = {}
+        self._mood = MoodState()
+        self._history = MessagesHistory()
+        self._interaction_state = InteractionState()
+        self._life_profile = ""
+        self._life_notes: list[LifeNote] = []
         self._lock = asyncio.Lock()
         # now = time.time()
         # self._live = LocationState(latitude=0.0, longitude=0.0, timestamp=now)
@@ -24,137 +24,90 @@ class InMemoryStateStore:
     # Mood
     # ------------------------------------------------------------------
 
-    async def get_mood(self, thread_id: str) -> MoodState:
+    async def get_mood(self) -> MoodState:
         async with self._lock:
-            mood = self._get_or_create_mood(thread_id)
-            return MoodState.from_dict(mood.as_dict())
+            return MoodState.from_dict(self._mood.as_dict())
 
-    async def set_mood(self, thread_id: str, mood: MoodState) -> None:
+    async def set_mood(self, mood: MoodState) -> None:
         async with self._lock:
-            key = _thread_key(thread_id)
-            self._moods[key] = MoodState.from_dict(mood.as_dict()).clamp()
+            self._mood = MoodState.from_dict(mood.as_dict()).clamp()
 
     # ------------------------------------------------------------------
     # History
     # ------------------------------------------------------------------
 
-    async def get_history(self, thread_id: str) -> MessagesHistory:
+    async def get_history(self) -> MessagesHistory:
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            return MessagesHistory.from_dict(history.as_dict())
+            return MessagesHistory.from_dict(self._history.as_dict())
 
-    async def append_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
+    async def append_messages(self, msgs: list[BaseMessage]) -> None:
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            history.append(msgs)
+            self._history.append(msgs)
 
-    async def replace_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
+    async def replace_messages(self, msgs: list[BaseMessage]) -> None:
         """Called after compression to swap trimmed window back in."""
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            history.replace(msgs)
+            self._history.replace(msgs)
 
-    async def get_agent_context(self, thread_id: str, n: int) -> list[BaseMessage]:
+    async def get_agent_context(self, n: int) -> list[BaseMessage]:
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            return _agent_context(history.all(), n)
+            return _agent_context(self._history.all(), n)
 
-    async def get_mood_context(self, thread_id: str, n: int) -> list[BaseMessage]:
+    async def get_mood_context(self, n: int) -> list[BaseMessage]:
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            return _raw_window(history.all(), n)
+            return _raw_window(self._history.all(), n)
 
-    async def history_len(self, thread_id: str) -> int:
+    async def history_len(self) -> int:
         async with self._lock:
-            history = self._get_or_create_history(thread_id)
-            return len(history)
+            return len(self._history)
 
-    async def list_threads(self) -> list[str]:
+    async def get_interaction_state(self) -> InteractionState:
         async with self._lock:
-            return sorted(self._histories.keys())
+            return InteractionState.from_dict(self._interaction_state.as_dict())
 
-    async def get_interaction_state(self, thread_id: str) -> InteractionState:
+    async def set_interaction_state(self, state: InteractionState) -> None:
         async with self._lock:
-            state = self._get_or_create_interaction_state(thread_id)
-            return InteractionState.from_dict(state.as_dict())
-
-    async def set_interaction_state(self, thread_id: str, state: InteractionState) -> None:
-        async with self._lock:
-            self._interaction_states[_thread_key(thread_id)] = InteractionState.from_dict(
-                state.as_dict()
-            )
+            self._interaction_state = InteractionState.from_dict(state.as_dict())
 
     async def get_life_profile(self) -> str:
         async with self._lock:
-            return str(self._life_profiles.get("global", ""))
+            return str(self._life_profile)
 
     async def replace_life_profile(self, profile: str) -> None:
         async with self._lock:
-            self._life_profiles["global"] = _clean_profile(profile)
+            self._life_profile = _clean_profile(profile)
 
-    async def get_life_notes(self, thread_id: str) -> list[LifeNote]:
+    async def get_life_notes(self) -> list[LifeNote]:
         async with self._lock:
-            return [LifeNote.from_dict(note.to_dict()) for note in self._life_notes.get(_thread_key(thread_id), [])]
+            return [LifeNote.from_dict(note.to_dict()) for note in self._life_notes]
 
-    async def append_life_note(self, thread_id: str, note: LifeNote) -> None:
+    async def append_life_note(self, note: LifeNote) -> None:
         async with self._lock:
-            key = _thread_key(thread_id)
-            notes = list(self._life_notes.get(key, []))
+            notes = list(self._life_notes)
             cleaned = _clean_note(note)
             if cleaned is None:
                 return
             notes.append(cleaned)
-            self._life_notes[key] = notes
+            self._life_notes = notes
 
-    async def consume_life_note(self, thread_id: str) -> LifeNote | None:
+    async def consume_life_note(self) -> LifeNote | None:
         async with self._lock:
-            key = _thread_key(thread_id)
-            notes = list(self._life_notes.get(key, []))
+            notes = list(self._life_notes)
             if not notes:
                 return None
             note = notes.pop(0)
-            self._life_notes[key] = notes
+            self._life_notes = notes
             return LifeNote.from_dict(note.to_dict())
 
-    async def prune_life_notes(self, thread_id: str, *, max_age_seconds: float) -> int:
+    async def prune_life_notes(self, *, max_age_seconds: float) -> int:
         async with self._lock:
-            key = _thread_key(thread_id)
-            notes = list(self._life_notes.get(key, []))
+            notes = list(self._life_notes)
             kept = [
                 note for note in notes
                 if _note_age_seconds(note) <= max(0.0, float(max_age_seconds))
             ]
-            self._life_notes[key] = kept
+            self._life_notes = kept
             return len(notes) - len(kept)
-
-    def _get_or_create_mood(self, thread_id: str) -> MoodState:
-        key = _thread_key(thread_id)
-        mood = self._moods.get(key)
-        if mood is None:
-            mood = MoodState()
-            self._moods[key] = mood
-        return mood
-
-    def _get_or_create_interaction_state(self, thread_id: str) -> InteractionState:
-        key = _thread_key(thread_id)
-        state = self._interaction_states.get(key)
-        if state is None:
-            state = InteractionState()
-            self._interaction_states[key] = state
-        return state
-
-    def _get_or_create_history(self, thread_id: str) -> MessagesHistory:
-        key = _thread_key(thread_id)
-        history = self._histories.get(key)
-        if history is None:
-            history = MessagesHistory()
-            self._histories[key] = history
-        return history
-
-
-def _thread_key(thread_id: str) -> str:
-    key = str(thread_id or "").strip()
-    return key or "global"
 
 
 def _clean_profile(profile: str) -> str:

@@ -1,6 +1,7 @@
 import asyncio
 import os
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from langchain_tavily import TavilySearch
@@ -16,22 +17,17 @@ from src.adapters.http.logs import register_logs_routes
 from src.adapters.http.metrics import register_metrics_routes
 from src.adapters.http.ping import register_ping_routes
 from src.adapters.audio.tts import EdgeTtsAdapter
-# from src.adapters.bus.in_memory import InMemoryMessageBus
 from src.adapters.bus.redis_bus import RedisMessageBus
-from src.adapters.input.console_input import ConsoleInputGateway
 from src.adapters.input.discord_input import DiscordInputAdapter
 from src.adapters.input.telegram_input import TelegramInputAdapter
 from src.adapters.input.webhook_input import WebhookInputAdapter
-from src.adapters.output.console_output import ConsoleOutputAdapter
 from src.adapters.output.discord_output import DiscordOutputAdapter
 from src.adapters.output.telegram_output import TelegramOutputAdapter
 from src.adapters.output.webhook_output import WebhookOutputAdapter
 from src.adapters.runtime.discord_runtime import DiscordRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
-# from src.adapters.state.in_memory import InMemoryStateStore
 from src.adapters.state.redis import RedisStateStore
-# from src.adapters.memory.in_memory import InMemoryEpisodicMemory
 from src.adapters.memory.redis import RedisEpisodicMemory
 from src.agent.chat.service import ReactAgentService
 from src.agent.life.service import LifeAgentService
@@ -40,7 +36,6 @@ from src.core.episodic_memory import EpisodicMemoryStore
 from src.core.orchestrator import AgentOrchestrator
 from src.core.outputsink import OutputSink
 from src.core.conversation_contraction import ConversationContractionService
-# from src.adapters.scheduler.in_memory import InMemorySchedulerBackend
 from src.adapters.scheduler.redis import RedisSchedulerBackend
 from src.core.scheduler import AgentScheduler
 from src.logger import get_logger
@@ -54,13 +49,14 @@ from src.tools.spotify import SpotifyTool
 
 
 logger = get_logger("examples.main")
+PrimaryChatApp = Literal["discord", "telegram"]
+PRIMARY_CHAT_APPS: tuple[PrimaryChatApp, ...] = ("discord", "telegram")
 
 
 async def _main() -> None:
     load_dotenv()
-
-    enabled_inputs = ["discord", "webhook"]
-    enabled_outputs = ["discord", "webhook"]
+    primary_chat_app = _resolve_primary_chat_app()
+    output_sink_mode = _resolve_output_sink_mode()
 
     # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
@@ -71,9 +67,22 @@ async def _main() -> None:
     redis_url = str(os.getenv("REDIS_URL", "redis://localhost:6379")
                     ).strip() or "redis://localhost:6379"
 
-    webhook_bearer_token = "123"
-    tts_base_url = "http://localhost:5050/v1"
-    tts_api_key = "123"
+    webhook_bearer_token = (
+        str(os.getenv("WEBHOOK_BEARER_TOKEN", "")).strip() or "123"
+    )
+    webhook_host = (
+        str(os.getenv("WEBHOOK_SERVER_HOST", "0.0.0.0")).strip() or "0.0.0.0"
+    )
+    webhook_port = int(
+        str(os.getenv("WEBHOOK_SERVER_PORT", "8080")).strip() or "8080"
+    )
+    tts_base_url = (
+        str(os.getenv("EDGE_TTS_BASE_URL", "http://localhost:5050/v1")).strip()
+        or "http://localhost:5050/v1"
+    )
+    tts_api_key = (
+        str(os.getenv("EDGE_TTS_API_KEY", "123")).strip() or "123"
+    )
 
     webhook_output_targets = [
         item.strip()
@@ -84,11 +93,24 @@ async def _main() -> None:
         str(os.getenv("WEBHOOK_OUTPUT_BEARER_TOKEN", "")).strip() or None
     )
 
-    discord_runtime = DiscordRuntime(token=discord_token)
-    telegram_runtime = TelegramRuntime(token=telegram_token)
+    if primary_chat_app == "discord" and not discord_token.strip():
+        raise RuntimeError("DISCORD_BOT_TOKEN is required when PRIMARY_CHAT_APP=discord.")
+    if primary_chat_app == "telegram" and not telegram_token.strip():
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is required when PRIMARY_CHAT_APP=telegram.")
+
+    discord_runtime = (
+        DiscordRuntime(token=discord_token)
+        if primary_chat_app == "discord"
+        else None
+    )
+    telegram_runtime = (
+        TelegramRuntime(token=telegram_token)
+        if primary_chat_app == "telegram"
+        else None
+    )
     webhook_runtime = WebhookRuntime(
-        host="0.0.0.0",
-        port=8080,
+        host=webhook_host,
+        port=webhook_port,
         bearer_token=webhook_bearer_token,
     )
 
@@ -97,21 +119,16 @@ async def _main() -> None:
     bus = RedisMessageBus(async_redis)
     state = RedisStateStore(async_redis)
 
-    # bus = InMemoryMessageBus()
-    # state = InMemoryStateStore()
-
     await _seed_life_profile_if_empty(state)
 
     embedding_model = FastEmbedEmbeddings(
         model_name="BAAI/bge-small-en-v1.5"
     )
 
-    # memory_backend = InMemoryEpisodicMemory(embedding=embedding_model)
     memory_backend = RedisEpisodicMemory(
         redis_client=sync_redis, embedding=embedding_model)
     episodic_memory = EpisodicMemoryStore(backend=memory_backend)
 
-    # scheduler_backend = InMemorySchedulerBackend()
     scheduler_backend = RedisSchedulerBackend(redis_client=async_redis)
     scheduler = AgentScheduler(
         backend=scheduler_backend,
@@ -125,7 +142,7 @@ async def _main() -> None:
 
     # Output adapters.
     outputs = _build_outputs(
-        enabled_outputs=enabled_outputs,
+        primary_chat_app=primary_chat_app,
         discord_runtime=discord_runtime,
         discord_output_user_id=discord_output_user_id,
         telegram_runtime=telegram_runtime,
@@ -136,18 +153,16 @@ async def _main() -> None:
         webhook_output_token=webhook_output_token,
     )
 
-    output_dispatcher = OutputSink(outputs=outputs, mode="direct")
+    output_dispatcher = OutputSink(outputs=outputs, mode=output_sink_mode)
 
     # Agent tools.
     tools = [
-        # WeatherTool(state_store=state, api_key=os.getenv("WEATHER_API_KEY")),
         ReminderTool(output=output_dispatcher),
         LifeInfoTool(state_store=state),
         SpotifyTool(),
         TavilySearch(max_results=3, topic="general"),
     ]
     tools.extend(CalendarTools())
-    # tools.extend(GmailTools())
 
     chat_model = ChatGroq(
         model="openai/gpt-oss-120b",
@@ -191,7 +206,7 @@ async def _main() -> None:
 
     # Input adapters.
     inputs = _build_inputs(
-        enabled_inputs=enabled_inputs,
+        primary_chat_app=primary_chat_app,
         bus=bus,
         discord_runtime=discord_runtime,
         telegram_runtime=telegram_runtime,
@@ -269,88 +284,117 @@ async def _main() -> None:
 
 def _build_outputs(
     *,
-    enabled_outputs: list[str],
-    discord_runtime: DiscordRuntime,
+    primary_chat_app: PrimaryChatApp,
+    discord_runtime: DiscordRuntime | None,
     discord_output_user_id: str,
-    telegram_runtime: TelegramRuntime,
+    telegram_runtime: TelegramRuntime | None,
     telegram_output_chat_id: str,
     webhook_runtime: WebhookRuntime,
     webhook_tts: EdgeTtsAdapter,
     webhook_output_targets: list[str],
     webhook_output_token: str | None,
 ) -> list[OutputAdapter]:
-    outputs: list[OutputAdapter] = []
-    for name in enabled_outputs:
-        if name == "console":
-            outputs.append(ConsoleOutputAdapter())
-        elif name == "discord":
-            outputs.append(
-                DiscordOutputAdapter(
-                    runtime=discord_runtime,
-                    default_channel_id=None,
-                    default_user_id=discord_output_user_id,
-                )
-            )
-        elif name == "telegram":
-            outputs.append(
-                TelegramOutputAdapter(
-                    runtime=telegram_runtime,
-                    default_chat_id=telegram_output_chat_id,
-                )
-            )
-        elif name == "webhook":
-            outputs.append(
-                WebhookOutputAdapter(
-                    targets=webhook_output_targets,
-                    runtime=webhook_runtime,
-                    tts=webhook_tts,
-                    bearer_token=webhook_output_token,
-                )
-            )
-
-    if not outputs:
-        raise RuntimeError("At least one output adapter must be enabled.")
-
-    return outputs
+    return [
+        _build_primary_output(
+            primary_chat_app=primary_chat_app,
+            discord_runtime=discord_runtime,
+            discord_output_user_id=discord_output_user_id,
+            telegram_runtime=telegram_runtime,
+            telegram_output_chat_id=telegram_output_chat_id,
+        ),
+        WebhookOutputAdapter(
+            targets=webhook_output_targets,
+            runtime=webhook_runtime,
+            tts=webhook_tts,
+            bearer_token=webhook_output_token,
+        ),
+    ]
 
 
 def _build_inputs(
     *,
-    enabled_inputs: list[str],
+    primary_chat_app: PrimaryChatApp,
     bus: MessageBus,
-    discord_runtime: DiscordRuntime,
-    telegram_runtime: TelegramRuntime,
+    discord_runtime: DiscordRuntime | None,
+    telegram_runtime: TelegramRuntime | None,
     webhook_runtime: WebhookRuntime,
     groq_api_key: str,
 ) -> list[InputAdapter]:
-    inputs: list[InputAdapter] = []
-    for name in enabled_inputs:
-        if name == "console":
-            inputs.append(ConsoleInputGateway(bus=bus))
-        elif name == "discord":
-            inputs.append(DiscordInputAdapter(
-                runtime=discord_runtime, bus=bus))
-        elif name == "telegram":
-            inputs.append(
-                TelegramInputAdapter(
-                    runtime=telegram_runtime,
-                    bus=bus,
-                    allowed_chat_ids=None,
-                )
-            )
-        elif name == "webhook":
-            inputs.append(
-                WebhookInputAdapter(
-                    runtime=webhook_runtime,
-                    bus=bus,
-                    stt=WhisperSttAdapter(api_key=groq_api_key),
-                )
-            )
+    return [
+        _build_primary_input(
+            primary_chat_app=primary_chat_app,
+            bus=bus,
+            discord_runtime=discord_runtime,
+            telegram_runtime=telegram_runtime,
+        ),
+        WebhookInputAdapter(
+            runtime=webhook_runtime,
+            bus=bus,
+            stt=WhisperSttAdapter(api_key=groq_api_key),
+        ),
+    ]
 
-    if not inputs:
-        raise RuntimeError("At least one input adapter must be enabled.")
 
-    return inputs
+def _build_primary_output(
+    *,
+    primary_chat_app: PrimaryChatApp,
+    discord_runtime: DiscordRuntime | None,
+    discord_output_user_id: str,
+    telegram_runtime: TelegramRuntime | None,
+    telegram_output_chat_id: str,
+) -> OutputAdapter:
+    if primary_chat_app == "discord":
+        if discord_runtime is None:
+            raise RuntimeError("Discord runtime is required for Discord output.")
+        return DiscordOutputAdapter(
+            runtime=discord_runtime,
+            default_channel_id=None,
+            default_user_id=discord_output_user_id,
+        )
+
+    if telegram_runtime is None:
+        raise RuntimeError("Telegram runtime is required for Telegram output.")
+    return TelegramOutputAdapter(
+        runtime=telegram_runtime,
+        default_chat_id=telegram_output_chat_id,
+    )
+
+
+def _build_primary_input(
+    *,
+    primary_chat_app: PrimaryChatApp,
+    bus: MessageBus,
+    discord_runtime: DiscordRuntime | None,
+    telegram_runtime: TelegramRuntime | None,
+) -> InputAdapter:
+    if primary_chat_app == "discord":
+        if discord_runtime is None:
+            raise RuntimeError("Discord runtime is required for Discord input.")
+        return DiscordInputAdapter(runtime=discord_runtime, bus=bus)
+
+    if telegram_runtime is None:
+        raise RuntimeError("Telegram runtime is required for Telegram input.")
+    return TelegramInputAdapter(
+        runtime=telegram_runtime,
+        bus=bus,
+        allowed_chat_ids=None,
+    )
+
+
+def _resolve_primary_chat_app() -> PrimaryChatApp:
+    value = str(os.getenv("PRIMARY_CHAT_APP", "discord")).strip().lower()
+    if value not in PRIMARY_CHAT_APPS:
+        raise RuntimeError(
+            "PRIMARY_CHAT_APP must be either 'discord' or 'telegram'."
+        )
+    return value
+
+
+def _resolve_output_sink_mode() -> Literal["direct", "multi"]:
+    value = str(os.getenv("OUTPUT_SINK_MODE", "direct")).strip().lower()
+    if value not in {"direct", "multi"}:
+        raise RuntimeError("OUTPUT_SINK_MODE must be either 'direct' or 'multi'.")
+    return value  # type: ignore[return-value]
 
 
 def main() -> None:

@@ -8,15 +8,14 @@ Think of the orchestrator as a **conductor** managing:
 - Consuming messages from the bus
 - Routing by type (chat, life reflection, history cleanup)
 - Coordinating mood, memory, and agent response
-- Managing conversation threads
+- Managing one personal conversation state
 - Scheduling proactive tasks
 
 ## Message Flow
 
 ```
 1. Consume message from bus
-2. Resolve thread_id (per-user/channel isolation)
-3. Route by source:
+2. Route by source:
    - LIFE → Run internal reflection
    - COMPACT → Cleanup history
    - Other → Handle chat (main path)
@@ -84,10 +83,10 @@ Process:
 - Delegates to specialized services
 - Easy to understand flow
 
-**Thread Isolation**
-- Per-user/channel state
-- No cross-talk between conversations
-- Scalable to many users
+**Personal-Agent Simplicity**
+- One state model for one user
+- No thread routing overhead
+- Easier to reason about continuity
 
 **Proactive Design**
 - Background reflection

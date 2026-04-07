@@ -19,8 +19,8 @@ class RedisStateStore:
     def __init__(self, redis_client: Redis) -> None:
         self._client = redis_client
 
-    async def get_mood(self, thread_id: str) -> MoodState:
-        key = _key(MOOD_KEY_PREFIX, thread_id)
+    async def get_mood(self) -> MoodState:
+        key = _key(MOOD_KEY_PREFIX)
         raw = await self._safe_get(key)
         if raw:
             return MoodState.from_dict(_json_dict(raw))
@@ -34,57 +34,48 @@ class RedisStateStore:
         await self._client.set(key, _json(mood.as_dict()))
         return mood
 
-    async def set_mood(self, thread_id: str, mood: MoodState) -> None:
-        await self._client.set(_key(MOOD_KEY_PREFIX, thread_id), _json(mood.clamp().as_dict()))
+    async def set_mood(self, mood: MoodState) -> None:
+        await self._client.set(_key(MOOD_KEY_PREFIX), _json(mood.clamp().as_dict()))
 
-    async def get_history(self, thread_id: str) -> MessagesHistory:
-        raw = await self._client.get(_key(HISTORY_KEY_PREFIX, thread_id))
+    async def get_history(self) -> MessagesHistory:
+        raw = await self._client.get(_key(HISTORY_KEY_PREFIX))
         if not raw:
             return MessagesHistory()
         return MessagesHistory.from_dict(_json_dict(raw))
 
-    async def append_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
-        history = await self.get_history(thread_id)
+    async def append_messages(self, msgs: list[BaseMessage]) -> None:
+        history = await self.get_history()
         history.append(msgs)
-        await self._client.set(_key(HISTORY_KEY_PREFIX, thread_id), _json(history.as_dict()))
+        await self._client.set(_key(HISTORY_KEY_PREFIX), _json(history.as_dict()))
 
-    async def replace_messages(self, thread_id: str, msgs: list[BaseMessage]) -> None:
-        history = await self.get_history(thread_id)
+    async def replace_messages(self, msgs: list[BaseMessage]) -> None:
+        history = await self.get_history()
         history.replace(msgs)
-        await self._client.set(_key(HISTORY_KEY_PREFIX, thread_id), _json(history.as_dict()))
+        await self._client.set(_key(HISTORY_KEY_PREFIX), _json(history.as_dict()))
 
-    async def get_agent_context(self, thread_id: str, n: int) -> list[BaseMessage]:
-        history = await self.get_history(thread_id)
+    async def get_agent_context(self, n: int) -> list[BaseMessage]:
+        history = await self.get_history()
         return _agent_context(history.all(), n)
 
-    async def get_mood_context(self, thread_id: str, n: int) -> list[BaseMessage]:
-        history = await self.get_history(thread_id)
+    async def get_mood_context(self, n: int) -> list[BaseMessage]:
+        history = await self.get_history()
         return _raw_window(history.all(), n)
 
-    async def history_len(self, thread_id: str) -> int:
-        history = await self.get_history(thread_id)
+    async def history_len(self) -> int:
+        history = await self.get_history()
         return len(history)
 
-    async def list_threads(self) -> list[str]:
-        prefix = f"{HISTORY_KEY_PREFIX}:"
-        keys = await self._client.keys(f"{prefix}*")
-        return sorted(
-            _decode(key).removeprefix(prefix)
-            for key in keys
-            if _decode(key).startswith(prefix)
-        )
-
-    async def get_interaction_state(self, thread_id: str) -> InteractionState:
-        raw = await self._client.get(_key(INTERACTION_KEY_PREFIX, thread_id))
+    async def get_interaction_state(self) -> InteractionState:
+        raw = await self._client.get(_key(INTERACTION_KEY_PREFIX))
         if not raw:
             state = InteractionState()
-            await self._client.set(_key(INTERACTION_KEY_PREFIX, thread_id), _json(state.as_dict()))
+            await self._client.set(_key(INTERACTION_KEY_PREFIX), _json(state.as_dict()))
             return state
         return InteractionState.from_dict(_json_dict(raw))
 
-    async def set_interaction_state(self, thread_id: str, state: InteractionState) -> None:
+    async def set_interaction_state(self, state: InteractionState) -> None:
         await self._client.set(
-            _key(INTERACTION_KEY_PREFIX, thread_id),
+            _key(INTERACTION_KEY_PREFIX),
             _json(state.as_dict()),
         )
 
@@ -103,8 +94,8 @@ class RedisStateStore:
             _json(str(profile or "").strip()),
         )
 
-    async def get_life_notes(self, thread_id: str) -> list[LifeNote]:
-        raw = await self._client.get(_key(LIFE_NOTES_KEY_PREFIX, thread_id))
+    async def get_life_notes(self) -> list[LifeNote]:
+        raw = await self._client.get(_key(LIFE_NOTES_KEY_PREFIX))
         if not raw:
             return []
         try:
@@ -131,8 +122,8 @@ class RedisStateStore:
             )
         return notes
 
-    async def append_life_note(self, thread_id: str, note: LifeNote) -> None:
-        notes = await self.get_life_notes(thread_id)
+    async def append_life_note(self, note: LifeNote) -> None:
+        notes = await self.get_life_notes()
         content = " ".join(str(note.content or "").strip().split())
         if not content:
             return
@@ -144,18 +135,18 @@ class RedisStateStore:
                 kind=str(note.kind or "").strip() or None,
             )
         )
-        await self._store_life_notes(thread_id, notes)
+        await self._store_life_notes(notes)
 
-    async def consume_life_note(self, thread_id: str) -> LifeNote | None:
-        notes = await self.get_life_notes(thread_id)
+    async def consume_life_note(self) -> LifeNote | None:
+        notes = await self.get_life_notes()
         if not notes:
             return None
         note = notes.pop(0)
-        await self._store_life_notes(thread_id, notes)
+        await self._store_life_notes(notes)
         return note
 
-    async def prune_life_notes(self, thread_id: str, *, max_age_seconds: float) -> int:
-        notes = await self.get_life_notes(thread_id)
+    async def prune_life_notes(self, *, max_age_seconds: float) -> int:
+        notes = await self.get_life_notes()
         limit = max(0.0, float(max_age_seconds))
         kept = []
         now = datetime.now(UTC)
@@ -168,12 +159,12 @@ class RedisStateStore:
                 created_at = created_at.replace(tzinfo=UTC)
             if (now - created_at.astimezone(UTC)).total_seconds() <= limit:
                 kept.append(note)
-        await self._store_life_notes(thread_id, kept)
+        await self._store_life_notes(kept)
         return len(notes) - len(kept)
 
-    async def _store_life_notes(self, thread_id: str, notes: list[LifeNote]) -> None:
+    async def _store_life_notes(self, notes: list[LifeNote]) -> None:
         await self._client.set(
-            _key(LIFE_NOTES_KEY_PREFIX, thread_id),
+            _key(LIFE_NOTES_KEY_PREFIX),
             _json([
                 {
                     "content": " ".join(str(note.content or "").strip().split()),
@@ -199,9 +190,9 @@ class RedisStateStore:
             {_decode(name): _decode(value) for name, value in legacy.items()}
         )
 
-    async def init_defaults(self, thread_id: str = "global") -> None:
-        mood_key = _key(MOOD_KEY_PREFIX, thread_id)
-        history_key = _key(HISTORY_KEY_PREFIX, thread_id)
+    async def init_defaults(self) -> None:
+        mood_key = _key(MOOD_KEY_PREFIX)
+        history_key = _key(HISTORY_KEY_PREFIX)
         if not await self._client.exists(mood_key):
             await self._client.set(mood_key, _json(MoodState().as_dict()))
         if not await self._client.exists(history_key):
@@ -229,11 +220,8 @@ def _json(value: object) -> str:
     return json.dumps(value, separators=(",", ":"))
 
 
-def _key(prefix: str, thread_id: str | None = None) -> str:
-    suffix = str(thread_id or "").strip()
-    if not suffix:
-        return prefix
-    return f"{prefix}:{suffix}"
+def _key(prefix: str) -> str:
+    return prefix
 
 
 def _agent_context(messages: list[BaseMessage], n: int) -> list[BaseMessage]:

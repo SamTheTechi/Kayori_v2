@@ -42,14 +42,12 @@ class ConversationContractionService:
     async def maybe_compact(
         self,
         *,
-        thread_id: str,
         state_store: StateStore,
         episodic_memory: EpisodicMemoryStore,
     ) -> None:
-        if await state_store.history_len(thread_id) <= COMPACT_THRESHOLD:
+        if await state_store.history_len() <= COMPACT_THRESHOLD:
             return
         await self.compact(
-            thread_id=thread_id,
             state_store=state_store,
             episodic_memory=episodic_memory,
         )
@@ -57,11 +55,10 @@ class ConversationContractionService:
     async def compact(
         self,
         *,
-        thread_id: str,
         state_store: StateStore,
         episodic_memory: EpisodicMemoryStore,
     ) -> None:
-        history = await state_store.get_history(thread_id)
+        history = await state_store.get_history()
         messages = history.all()
 
         existing_summary = ""
@@ -88,7 +85,6 @@ class ConversationContractionService:
 
         for fact in facts:
             await episodic_memory.remember(
-                thread_id=thread_id,
                 fact=str(fact.get("fact") or ""),
                 source=str(fact.get("source") or "conversation"),
                 category=str(fact.get("category") or "misc"),
@@ -99,7 +95,6 @@ class ConversationContractionService:
             )
 
         await state_store.replace_messages(
-            thread_id,
             [
                 SystemMessage(
                     content=summary,

@@ -101,7 +101,6 @@ class MoodEngine:
         self,
         content: str,
         messages: list[BaseMessage] | None = None,
-        thread_id: str | None = None
     ) -> dict[str, float]:
         text = str(content or "").strip()
         if not text:
@@ -122,7 +121,6 @@ class MoodEngine:
                     "mood_model_call_failed",
                     "Mood model invocation failed.",
                     context={
-                        "thread_id": thread_id,
                         "message_length": len(text),
                         "timeout_seconds": float(self.timeout_seconds),
                         "error_type": exc.__class__.__name__,

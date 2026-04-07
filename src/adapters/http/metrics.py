@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import Request
 
 from src.adapters.runtime.webhook_runtime import WebhookRoute, WebhookRuntime
@@ -36,65 +34,31 @@ def register_metrics_routes(runtime: WebhookRuntime, state_store: StateStore) ->
             name="api-metrics-history",
         )
     )
-    runtime.add_route(
-        WebhookRoute(
-            path="/api/metrics/threads",
-            methods=("GET",),
-            endpoint=lambda request: _handle_threads(request, state_store),
-            require_bearer_auth=True,
-            name="api-metrics-threads",
-        )
-    )
 
 
-async def _handle_mood(request: Request, state_store: StateStore) -> dict[str, object]:
-    thread_id = _thread_id(request)
-    mood = await state_store.get_mood(thread_id)
+async def _handle_mood(_: Request, state_store: StateStore) -> dict[str, object]:
+    mood = await state_store.get_mood()
     return {
-        "thread_id": thread_id,
         "mood": mood.as_dict(),
     }
 
 
 async def _handle_life_notes(
-    request: Request,
+    _: Request,
     state_store: StateStore,
 ) -> dict[str, object]:
-    thread_id = _thread_id(request)
-    notes = await state_store.get_life_notes(thread_id)
+    notes = await state_store.get_life_notes()
     return {
-        "thread_id": thread_id,
         "life_notes": [note.to_dict() for note in notes],
     }
 
 
 async def _handle_history(
-    request: Request,
-    state_store: StateStore,
-) -> dict[str, object]:
-    thread_id = _thread_id(request)
-    history = await state_store.get_history(thread_id)
-    return {
-        "thread_id": thread_id,
-        "count": len(history),
-        "history": history.as_dict(),
-    }
-
-
-async def _handle_threads(
     _: Request,
     state_store: StateStore,
 ) -> dict[str, object]:
-    threads = await state_store.list_threads()
+    history = await state_store.get_history()
     return {
-        "count": len(threads),
-        "threads": threads,
+        "count": len(history),
+        "history": history.as_dict(),
     }
-
-
-def _thread_id(request: Request) -> str:
-    return (
-        str(request.query_params.get("thread_id") or "").strip()
-        or str(os.getenv("FORCE_THREAD_ID", "")).strip()
-        or "global"
-    )

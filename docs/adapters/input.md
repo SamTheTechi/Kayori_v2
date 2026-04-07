@@ -305,7 +305,8 @@ WEBHOOK_SERVER_PORT=8080
 Enabled in `main.py`:
 
 ```python
-enabled_inputs = ["discord", "webhook"]
+PRIMARY_CHAT_APP = "discord"  # or "telegram"
+# Webhook input is always enabled alongside the primary chat app.
 ```
 
 ---
