@@ -6,8 +6,8 @@ Kayori uses two specialized agents working together to provide intelligent conve
 
 ```
 ┌─────────────────────────────────────┐
-│         AGENT SYSTEM                 │
-│                                      │
+│           AGENT SYSTEM              │
+│                                     │
 │  ┌──────────────┐  ┌──────────────┐ │
 │  │  Chat Agent  │  │  Life Agent  │ │
 │  │  (ReAct)     │  │ (Reflection) │ │
@@ -205,59 +205,6 @@ LangGraph manages:
 - **Why**: Good enough for reflection tasks
 - **Cost**: 6x cheaper than 120B
 - **Use**: Background processing where cost matters more than perfection
-
----
-
-## Pros and Cons
-
-### ✅ Strengths
-
-**Separation of Concerns**
-- Chat agent focuses on user experience
-- Life agent handles internal processing
-- No blocking user responses for background tasks
-
-**Cost Optimization**
-- Expensive model only for user-facing responses
-- Cheaper model for background reflection
-- Significant savings with frequent LIFE triggers
-
-**Tool Flexibility**
-- Different tools per agent
-- Easy to add/remove tools
-- LangGraph handles tool orchestration
-
-**Error Isolation**
-- Agent failures don't crash orchestrator
-- Graceful degradation with error messages
-- Comprehensive logging for debugging
-
-### ❌ Limitations
-
-**Model Dependency**
-- Tied to Groq + openai/gpt-oss models
-- Changing providers requires code updates
-- No fallback model on API failures
-
-**Limited Context Window Management**
-- Fixed window sizes (12 messages for agent, 4 for mood)
-- No dynamic window based on conversation complexity
-- Relies on contraction to prevent overflow
-
-**Life Agent Frequency**
-- 20-second interval seems very frequent
-- May generate redundant life notes
-- No adaptive scheduling based on activity
-
-**No Streaming**
-- Responses generated fully before sending
-- No partial updates to user
-- Longer wait times for complex responses
-
-**Tool Execution Overhead**
-- Each tool call adds latency
-- No parallel tool execution
-- Sequential ReAct loop can be slow
 
 ---
 

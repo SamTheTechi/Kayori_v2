@@ -10,11 +10,11 @@ Input → Gateway BUS → Orchestrator → Specialized Flow → Output Sink → 
 ```
 
 Think of it like this:
--**Input adapters** listen to platforms Discord, Telegram or  Webhook
--**Message Bus** decouples inbound events from runtime processing
--**Orchestrator** reads each `MessageEnvelope` and routes it by source/type
--**Specialized Flows** handle chat, life reflection, compaction, and proactive behavior
--**Output Sink** routes outbound replies back to the correct platform(s)
+- **Input adapters** listen to platforms Discord, Telegram or  Webhook
+- **Message Bus** decouples inbound events from runtime processing
+- **Orchestrator** reads each `MessageEnvelope` and routes it by source/type
+- **Specialized Flows** handle chat, life reflection, compaction, and proactive behavior
+- **Output Sink** routes outbound replies back to the correct platform(s)
 
 ---
 
