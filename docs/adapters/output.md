@@ -1,373 +1,135 @@
 # Output Adapters
 
-Output adapters deliver Kayori's responses to external platforms.
+Output adapters deliver `OutboundMessage` objects to external platforms.
 
 ## Available Output Adapters
 
-| Adapter | Platform | Special Features |
-|---------|----------|------------------|
-| DiscordOutputAdapter | Discord | Reply threading, mentions |
-| TelegramOutputAdapter | Telegram | Group/DM support |
-| WebhookOutputAdapter | HTTP REST | TTS, multiple targets |
-| ConsoleOutputAdapter | CLI | Development/testing |
-
----
+| Adapter | Target | Notes |
+|---------|--------|-------|
+| `DiscordOutputAdapter` | Discord | Supports text replies, file sends, and voice-call playback |
+| `TelegramOutputAdapter` | Telegram | Supports text and audio sends |
+| `WebhookOutputAdapter` | HTTP targets and webhook response completion | Posts outbound payloads and resolves pending webhook responses |
+| `ConsoleOutputAdapter` | stdout | Local development path |
 
 ## How Output Adapters Work
 
-### General Flow
+General flow:
 
-```
-Orchestrator → OutboundMessage → OutputSink → OutputAdapter → Platform
+```text
+AgentOrchestrator -> OutboundMessage -> OutputSink -> OutputAdapter
 ```
 
-### OutboundMessage Structure
+`OutputSink` selects the adapters. Each adapter handles route resolution and the platform-specific send.
+
+## OutboundMessage Structure
 
 ```python
 OutboundMessage(
-    source=MessageSource.DISCORD,       # Original source
-    content="Here's your answer!",       # Response text
-    channel_id="channel456",             # Where to send
-    target_user_id="user123",            # Who to reply to
-    reply_to_message_id="msg789",        # Thread reply (optional)
-    mention_author=True,                 @mention user (optional)
-    metadata={...}                       # Extra data
+    source=MessageSource.DISCORD,
+    content="Here's your answer!",
+    channel_id="channel456",
+    target_user_id="user123",
+    audio=None,
+    voice_mode=False,
+    metadata={...},
+    reply_to_message_id="msg789",
+    mention_author=True,
 )
 ```
-
----
 
 ## Output Sink Routing
 
-Before reaching output adapters, messages pass through `OutputSink`:
+In normal runtime use, `OutputSink` runs in `direct` mode and selects adapters by `route_source == message.source`.
 
-### Direct Mode (Default)
-- Routes back to **same platform** message came from
-- Discord message → Discord response
-- Telegram message → Telegram response
+Current production composition in `main.py`:
+- one primary output adapter for Discord or Telegram
+- one webhook output adapter
 
-### Multi Mode
-- **Broadcasts** to all configured outputs
-- Useful for testing/mirroring
-- One message → Discord + Telegram + Webhook
-
-```python
-# In main.py
-output_dispatcher = OutputSink(outputs=outputs, mode="direct")
-```
-
----
+The sink type still supports `multi`, but normal routing remains source-based.
 
 ## DiscordOutputAdapter
 
-### What It Does
+`DiscordOutputAdapter` resolves either a DM route or a channel route, then sends text and optional audio through `DiscordRuntime`.
 
-Sends responses to Discord channels.
-
-### Setup
-
-```python
-discord_output = DiscordOutputAdapter(
-    runtime=discord_runtime,
-    default_channel_id=None,
-    default_user_id=discord_user_id
-)
-```
-
-### Features
-
-- Sends messages to Discord channels
-- Reply threading via `reply_to_message_id`
-- @mention support with `mention_author`
-- Uses Discord runtime for API access
-
-### Pros
-✅ Native Discord formatting  
-✅ Reply threads work naturally  
-✅ Mentions notify users  
-
-### Cons
-❌ Requires Discord runtime  
-❌ Rate limited by Discord API  
-❌ Message length limits (2000 chars)  
-
----
+Current behavior:
+- supports explicit routing overrides through `discord_channel_id` and `discord_user_id` metadata
+- replies to the original message only when `message.source == DISCORD` and `reply_to_message_id` is present
+- chunks long messages to stay below Discord limits
+- sends files when `audio` is present
+- routes voice-call replies to `DiscordVoiceRuntime.play_reply()` when the outbound metadata indicates a voice-call transport
 
 ## TelegramOutputAdapter
 
-### What It Does
+`TelegramOutputAdapter` resolves a chat ID from metadata, `target_user_id`, `channel_id`, or the configured default chat.
 
-Sends responses to Telegram chats/groups.
-
-### Setup
-
-```python
-telegram_output = TelegramOutputAdapter(
-    runtime=telegram_runtime,
-    default_chat_id=telegram_chat_id
-)
-```
-
-### Features
-
-- Sends messages to Telegram chats
-- Works in groups and DMs
-- Default chat ID fallback
-- Uses Telegram runtime
-
-### Pros
-✅ Native Telegram formatting  
-✅ Works in groups  
-✅ Supports Telegram features  
-
-### Cons
-❌ Requires Telegram runtime  
-❌ Rate limited by Telegram API  
-❌ Markdown parsing errors can fail sends  
-
----
+Current behavior:
+- chunks long messages before sending
+- replies to the original Telegram message when `reply_to_message_id` is present
+- uses `send_voice()` for OGG or voice-mode payloads
+- uses `send_audio()` for other audio payloads
 
 ## WebhookOutputAdapter
 
-### What It Does
+`WebhookOutputAdapter` does two things:
+- resolves pending synchronous webhook responses through `WebhookRuntime`
+- posts the outbound payload to configured HTTP target URLs
 
-Sends responses via HTTP POST to custom endpoints. Includes TTS support.
+Current behavior:
+- if the outbound metadata contains a webhook envelope ID, the runtime response future is resolved first
+- text and audio payloads are forwarded to every configured target with `httpx.AsyncClient`
+- bearer auth is added when configured
+- target failures are logged per URL
 
-### Setup
-
-```python
-webhook_output = WebhookOutputAdapter(
-    targets=["http://example.com/callback"],
-    runtime=webhook_runtime,
-    tts=webhook_tts,  # EdgeTTS adapter
-    bearer_token=webhook_token
-)
-```
-
-### Features
-
-- HTTP POST to configured targets
-- Bearer token authentication
-- Text-to-speech via EdgeTTS
-- Multiple target URLs
-- Audio generation for voice responses
-
-### TTS Integration
-
-```python
-# EdgeTTS converts text to speech
-tts = EdgeTtsAdapter(
-    api_key="123",
-    base_url="http://localhost:5050/v1"
-)
-
-# Webhook output includes audio
-webhook_output = WebhookOutputAdapter(
-    targets=[...],
-    tts=tts
-)
-```
-
-### Pros
-✅ Platform agnostic  
-✅ Custom integrations  
-✅ Voice/audio support  
-✅ Multiple targets  
-
-### Cons
-❌ Requires HTTP server  
-❌ Target must be reachable  
-❌ TTS adds latency  
-
----
+TTS is not implemented inside the output adapter. Audio generation happens earlier in the orchestrator before the outbound message reaches the sink.
 
 ## ConsoleOutputAdapter
 
-### What It Does
-
-Prints responses to stdout for testing.
-
-### Setup
-
-```python
-console_output = ConsoleOutputAdapter()
-```
-
-### Features
-
-- Simple print to console
-- No configuration needed
-- Great for development
-- Instant feedback
-
-### Pros
-✅ Zero setup  
-✅ Perfect for testing  
-✅ No dependencies  
-
-### Cons
-❌ Not for production  
-❌ No platform features  
-❌ Single user only  
-
----
+`ConsoleOutputAdapter` prints the outbound content to stdout with a simple route label derived from `target_user_id` or `channel_id`.
 
 ## Creating a Custom Output Adapter
 
-### Step 1: Implement Protocol
-
 ```python
-from src.shared_types.protocol import OutputAdapter
-from src.shared_types.models import OutboundMessage, MessageSource
+from src.shared_types.models import MessageSource, OutboundMessage
 
-class MyPlatformOutput(OutputAdapter):
-    name = "my_platform"
-    route_source = MessageSource.WEBHOOK  # Match this source
-    
-    def __init__(self, runtime):
-        self.runtime = runtime
-    
-    async def start(self):
-        # Initialize connection
-        pass
-    
-    async def stop(self):
-        # Clean up
-        pass
-    
-    async def send(self, message: OutboundMessage):
-        # Deliver to platform
-        await self.runtime.send_message(
-            channel_id=message.channel_id,
-            content=message.content,
-            reply_to=message.reply_to_message_id
-        )
+class MyPlatformOutput:
+    name = "my-platform"
+    route_source = MessageSource.WEBHOOK
+
+    async def start(self) -> None:
+        ...
+
+    async def stop(self) -> None:
+        ...
+
+    async def send(self, message: OutboundMessage) -> None:
+        ...
 ```
 
-### Step 2: Wire in main.py
-
-```python
-from src.adapters.output.my_platform import MyPlatformOutput
-
-outputs.append(MyPlatformOutput(runtime=my_runtime))
-```
-
----
-
-## Output Adapter Pros and Cons (Overall)
-
-### ✅ Strengths
-
-**Platform Flexibility**
-- Same response logic works everywhere
-- Easy to add new platforms
-- Test with console output
-
-**Failure Isolation**
-- One adapter failing doesn't crash others
-- Output sink catches errors per-adapter
-- System continues if Discord down, Telegram works
-
-**Routing Modes**
-- Direct mode for normal use
-- Multi mode for testing/broadcasting
-- Flexible deployment options
-
-**Lifecycle Management**
-- Clean start/stop in order
-- Reverse order teardown
-- Graceful shutdown
-
-### ❌ Limitations
-
-**No Message Transformation**
-- Adapters receive raw `OutboundMessage`
-- Platform-specific formatting manual
-- No automatic length truncation
-
-**Limited Error Recovery**
-- Failed sends just logged
-- No retry logic
-- No dead letter queue
-
-**Routing Simplicity**
-- Direct mode only matches source
-- No complex routing rules
-- No priority/fallback logic
-
-**Synchronous Within Async**
-- Each adapter's `send()` blocks
-- Slow adapter delays gather completion
-- No timeout per adapter
-
----
+Register the adapter in the output builder path in `main.py`.
 
 ## Configuration
 
-Environment variables:
+Current output wiring is driven from `main.py` and environment variables such as:
 
 ```env
-# Discord
-DISCORD_USER_ID=target_user_id
-
-# Telegram
-TELEGRAM_CHAT_ID=target_chat_id
-
-# Webhook
-WEBHOOK_OUTPUT_URLS=http://target1,http://target2
-WEBHOOK_OUTPUT_BEARER_TOKEN=token
-
-# TTS
-EDGE_TTS_BASE_URL=http://localhost:5050/v1
-EDGE_TTS_API_KEY=123
-
-# Sink Mode
-OUTPUT_SINK_MODE=direct  # or "multi"
+PRIMARY_CHAT_APP=discord
+DISCORD_USER_ID=
+TELEGRAM_CHAT_ID=
+WEBHOOK_OUTPUT_URLS=
+WEBHOOK_OUTPUT_BEARER_TOKEN=
+OUTPUT_SINK_MODE=direct
 ```
 
-Enabled in `main.py`:
+## File References
 
-```python
-PRIMARY_CHAT_APP = "discord"  # or "telegram"
-# Webhook output is always enabled alongside the primary chat app.
-```
-
----
-
-## Output Selection Logic
-
-From `OutputSink._select_outputs()`:
-
-```python
-def _select_outputs(self, message: OutboundMessage) -> list[OutputAdapter]:
-    if self.mode == "multi":
-        return list(self.outputs)  # All adapters
-    
-    # Direct mode: match source
-    return [
-        output for output in self.outputs 
-        if output.route_source == message.source
-    ]
-```
-
-**Example:**
-- Discord message → `source=DISCORD` → DiscordOutputAdapter only
-- Telegram message → `source=TELEGRAM` → TelegramOutputAdapter only
-
----
-
-## Key Takeaways
-
-1. **One protocol, many platforms**: All outputs implement `OutputAdapter`
-2. **Sink handles routing**: Direct or multi mode
-3. **Failures isolated**: One down ≠ all down
-4. **TTS integration**: Webhook output includes audio
-5. **Easy to extend**: New platform = implement protocol + wire in
-
----
+- [`src/adapters/output/discord_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/discord_output.py)
+- [`src/adapters/output/telegram_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/telegram_output.py)
+- [`src/adapters/output/webhook_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/webhook_output.py)
+- [`src/adapters/output/console_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/console_output.py)
+- [`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/outputsink.py)
 
 ## Related
 
-- [Input Adapters](input.md) - Receiving messages
-- [Output Sink](../output-sink.md) - Routing logic
-- [Architecture](../architecture.md) - Overall system design
+- [Input Adapters](input.md)
+- [Output Sink](../output-sink.md)
+- [Architecture](../architecture.md)

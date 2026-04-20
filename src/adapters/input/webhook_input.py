@@ -1,24 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from src.adapters.audio import WhisperSttAdapter
 from src.adapters.runtime.webhook_runtime import WebhookRoute, WebhookRuntime
 from src.adapters.webhook_common import with_webhook_kind
-from src.shared_types.models import MessageEnvelope, MessageSource
-from src.shared_types.protocol import MessageBus
+from src.shared_types.models import AudioPayload, MessageEnvelope, MessageSource
+from src.shared_types.protocol import InputAdapter, MessageBus
 
 
 @dataclass(slots=True)
-class WebhookInputAdapter:
+class WebhookInputAdapter(InputAdapter):
     runtime: WebhookRuntime
     bus: MessageBus
-    stt: WhisperSttAdapter | None = None
     name: str = "webhook"
 
     _registered: bool = field(default=False, init=False, repr=False)
@@ -38,16 +37,15 @@ class WebhookInputAdapter:
                 name="webhook-text",
             )
         )
-        if self.stt is not None:
-            self.runtime.add_route(
-                WebhookRoute(
-                    path="/webhooks/audio",
-                    methods=("POST",),
-                    endpoint=self._handle_audio,
-                    require_bearer_auth=True,
-                    name="webhook-audio",
-                )
+        self.runtime.add_route(
+            WebhookRoute(
+                path="/webhooks/audio",
+                methods=("POST",),
+                endpoint=self._handle_audio,
+                require_bearer_auth=True,
+                name="webhook-audio",
             )
+        )
         self._registered = True
 
     async def start(self) -> None:
@@ -105,13 +103,6 @@ class WebhookInputAdapter:
         return JSONResponse(status_code=status.HTTP_200_OK, content=response_payload)
 
     async def _handle_audio(self, request: Request) -> JSONResponse:
-        stt = self.stt
-        if stt is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="STT adapter is not configured.",
-            )
-
         form = await request.form()
         upload = _extract_upload(form.get("audio") or form.get("file"))
         if upload is None:
@@ -121,13 +112,11 @@ class WebhookInputAdapter:
             )
 
         audio_bytes = await upload.read()
-        transcription = await stt.transcribe(
-            audio_bytes=audio_bytes,
-            filename=upload.filename or "audio.wav",
-            mime_type=upload.content_type or "audio/wav",
-            language=_clean_text(form.get("language")) or None,
-            prompt=_clean_text(form.get("prompt")) or None,
-        )
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded audio file is empty.",
+            )
 
         metadata = with_webhook_kind(
             None,
@@ -139,9 +128,10 @@ class WebhookInputAdapter:
                 "request_path": str(request.url.path),
                 "remote_addr": request.client.host if request.client else None,
                 "user_agent": str(request.headers.get("user-agent", "")).strip(),
-                "transcript_language": transcription.language,
                 "audio_filename": upload.filename,
                 "audio_content_type": upload.content_type,
+                "language": _clean_text(form.get("language")) or None,
+                "stt_prompt": _clean_text(form.get("prompt")) or None,
                 "tts_voice": _clean_text(form.get("voice")) or None,
                 "tts_response_format": _clean_text(form.get("response_format")) or None,
                 "tts_speed": _optional_float(form.get("speed")),
@@ -150,11 +140,18 @@ class WebhookInputAdapter:
 
         envelope = MessageEnvelope(
             source=MessageSource.WEBHOOK,
-            content=transcription.text,
+            content=_clean_text(form.get("content")) or None,
             channel_id=_clean_text(form.get("channel_id")) or "webhook-audio",
             author_id=_clean_text(form.get("author_id")) or "webhook-audio",
             message_id=_clean_text(form.get("message_id")),
             target_user_id=_clean_text(form.get("target_user_id")),
+            audio=AudioPayload(
+                base64_data=base64.b64encode(audio_bytes).decode("ascii"),
+                mime_type=upload.content_type or "audio/wav",
+                filename=upload.filename or "audio.wav",
+                duration_seconds=_optional_float(form.get("duration_seconds")),
+            ),
+            voice_mode=True,
             metadata=metadata,
         )
         response_payload = await self._dispatch_and_wait(envelope)

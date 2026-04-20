@@ -6,15 +6,15 @@ Kayori v2 uses a modular, adapter-based architecture designed for flexibility an
 
 **Message Flow:**
 ```
-Input → Gateway BUS → Orchestrator → Agent → Output Sink → Response
+Input → Gateway BUS → Orchestrator → Specialized Flow → Output Sink → Response
 ```
 
 Think of it like this:
-1. **Input adapters** listen to platforms (Discord, Telegram, Webhook)
-2. **Message Bus** queues incoming messages
-3. **Orchestrator** coordinates everything (mood, memory, agent, scheduling)
-4. **Agent** generates responses using LangGraph + tools
-5. **Output Sink** routes replies back to the right platform
+-**Input adapters** listen to platforms Discord, Telegram or  Webhook
+-**Message Bus** decouples inbound events from runtime processing
+-**Orchestrator** reads each `MessageEnvelope` and routes it by source/type
+-**Specialized Flows** handle chat, life reflection, compaction, and proactive behavior
+-**Output Sink** routes outbound replies back to the correct platform(s)
 
 ---
 
@@ -22,7 +22,7 @@ Think of it like this:
 
 ### 1. Adapters (The Pluggable Layer)
 
-Adapters let you swap platforms and backends without touching core logic.
+Adapters isolate platform and backend concerns so the runtime can evolve without rewriting core coordination logic.
 
 **Input Adapters:** Where messages come from
 - Discord, Telegram, Webhook, Console
@@ -31,33 +31,55 @@ Adapters let you swap platforms and backends without touching core logic.
 - Discord, Telegram, Webhook (with TTS), Console
 
 **Backend Adapters:** Storage and infrastructure
-- **Message Bus:** Redis queue (or in-memory)
-- **State Store:** Redis for mood, history, life notes (or in-memory)
-- **Episodic Memory:** Redis vector search for long-term facts (or in-memory)
-- **Scheduler:** Redis-backed trigger system (or in-memory)
+- **Message Bus:** queue (Redis or in-memory)
+- **State Store:** mood, history, life notes (Redis or in-memory)
+- **Episodic Memory:** vector search for long-term facts (RedisVL or Pinecone or in-memory)
+- **Scheduler:** trigger system (Redis or in-memory)
 
 ### 2. Orchestrator (The Coordinator)
 
-The `AgentOrchestrator` is the runtime coordinator. It:
-- Consumes messages from the bus
-- Routes by type: **chat**, **life** (internal reflection), or **compact** (history cleanup)
-- Coordinates mood analysis, memory recall, and agent response generation
-- Manages conversation threads (per-user/per-channel isolation)
-- Handles proactive history compaction after inactivity
+The `AgentOrchestrator` is the runtime coordinator. it inspects each `MessageEnvelope` and branches into different flows depending on the envelope source.
 
-### 3. Agent System (The Brain)
+Current routing behavior:
+- **Chat flow** for normal inbound platform messages
+- **Life flow** for internal reflective processing
+- **Compaction flow** for history cleanup and memory extraction
+- **Proactive flow** for self-initiated outreach
 
-**Two agents work together:**
+In practice, the orchestrator is responsible for:
+- Consuming envelopes from the bus
+- Coalescing adjacent user messages when appropriate
+- Routing by source/type before any agent work begins
+- Coordinating mood analysis, episodic recall, state updates, and output delivery
+- Triggering background behaviors such as compaction and proactive messaging
 
-**Chat Agent** (`ReactAgentService`):
-- Main conversational agent using LangGraph ReAct pattern
-- Has access to tools (Spotify, reminders, search, calendar)
-- Generates responses to user messages
 
-**Life Agent** (`LifeAgentService`):
-- Internal reflection agent that runs on schedule
-- Generates "life notes" from conversations for long-term learning
-- Works in the background, not directly visible to users
+### 3. Agent Flows (The Decision layer)
+
+Kayori no longer behaves like a system with one single agent entrypoint for everything. The runtime which uses multiple specialized flows, coordinated by the orchestrator.
+
+**Chat Flow**
+- Handles normal conversational turns from Discord, Telegram, Console, or Webhook
+- Loads conversation context, mood state, and episodic memory
+- Calls the main chat agent
+- Persists the resulting user/assistant turn
+- Sends the final outbound response through the output sink
+
+**Life Flow**
+- Handles internal reflection events
+- Uses the life agent to generate private life notes from compacted context, episodic memory, and life profile state
+- Stores notes for later continuity instead of replying directly to the user
+
+**Compaction Flow**
+- Handles conversation contraction events
+- Summarizes older history into a compact running summary
+- Extracts durable facts into episodic memory
+- Shrinks the active context window while preserving continuity
+
+**Proactive Flow**
+- Handles internally triggered outreach decisions
+- Checks recent interaction state and relationship score before sending anything
+- Re-enters the chat response path only when proactive messaging is allowed
 
 ### 4. Mood Engine (Emotional Intelligence)
 
@@ -81,7 +103,7 @@ Stores durable facts about users with:
 ### 6. Conversation Contraction (History Management)
 
 Prevents context overflow by:
-- Triggering when conversation hits 12 messages
+- Triggering when conversation hits 12 messages (can be more or less)
 - Summarizing older messages into a compact summary
 - Extracting important facts to episodic memory
 - Keeping the last 4 messages raw for continuity
@@ -107,147 +129,75 @@ Routes outbound messages:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    PLATFORM LAYER                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Discord  │  │ Telegram │  │ Webhook  │              │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘              │
-│       │              │              │                    │
-│  ┌────▼──────────────▼──────────────▼─────┐             │
-│  │         INPUT ADAPTERS                 │             │
-│  └────────────────┬───────────────────────┘             │
-└───────────────────┼─────────────────────────────────────┘
-                    │ MessageEnvelope
-┌───────────────────▼─────────────────────────────────────┐
-│                    CORE LAYER                            │
+│                      PLATFORM LAYER                     │
+│    ┌──────────┐  ┌──────────┐  ┌──────────┐             │
+│    │ Discord  │  │ Telegram │  │ Webhook  │             │
+│    └────┬─────┘  └────┬─────┘  └────┬─────┘             │
+│         │             │             │                   │
+│    ┌────▼─────────────▼─────────────▼───────┐           │
+│    │              INPUT ADAPTERS            │           │
+│    └──────────────────┬─────────────────────┘           │
+└───────────────────────┼─────────────────────────────────┘
+                        │ MessageEnvelope
+┌───────────────────────▼─────────────────────────────────┐
+│                    CORE LAYER                           │
 │  ┌──────────────────────────────────────────┐           │
 │  │          MESSAGE BUS (Redis)             │           │
 │  └────────────────┬─────────────────────────┘           │
 │                   │                                     │
-│  ┌────────────────▼────────────────────────┐            │
-│  │         ORCHESTRATOR                     │            │
-│  │  ┌──────────────────────────────────┐   │            │
-│  │  │  Mood Engine                     │   │            │
-│  │  │  Episodic Memory                 │   │            │
-│  │  │  Conversation Contraction        │   │            │
-│  │  │  Scheduler                       │   │            │
-│  │  └──────────────────────────────────┘   │            │
-│  └────────────────┬────────────────────────┘            │
+│  ┌────────────────▼──────────────────────────────┐      │
+│  │                 ORCHESTRATOR                  │      │
+│  │   Routes each MessageEnvelope by source/type  │      │
+│  └────────────────┬──────────────────────────────┘      │
 │                   │                                     │
-│  ┌────────────────▼────────────────────────┐            │
-│  │         AGENT SYSTEM                     │            │
-│  │  ┌────────────┐    ┌──────────────┐    │            │
-│  │  │ Chat Agent │    │ Life Agent   │    │            │
-│  │  │ (ReAct)    │    │ (Reflection) │    │            │
-│  │  └────────────┘    └──────────────┘    │            │
-│  │         │                               │            │
-│  │  ┌──────▼──────────────────────┐       │            │
-│  │  │  Tools (Spotify, Search,    │       │            │
-│  │  │         Reminder, Calendar) │       │            │
-│  │  └─────────────────────────────┘       │            │
-│  └────────────────┬────────────────────────┘            │
-│                   │                                     │
-│  ┌────────────────▼────────────────────────┐            │
-│  │         OUTPUT SINK                      │            │
-│  └────────────────┬────────────────────────┘            │
-└───────────────────┼─────────────────────────────────────┘
-                    │ OutboundMessage
-┌───────────────────▼─────────────────────────────────────┐
-│                   OUTPUT LAYER                           │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Discord  │  │ Telegram │  │ Webhook  │              │
-│  │  Output  │  │  Output  │  │ + TTS    │              │
-│  └──────────┘  └──────────┘  └──────────┘              │
+│      ┌────────────┼──────────────┬──────────────┐       │
+│      │            │              │              │       │
+│  ┌───▼────┐  ┌────▼─────┐  ┌─────▼──────┐  ┌────▼─────┐ │
+│  │ Chat   │  │ Life     │  │ Compaction │  │ Proactive│ │
+│  │ Flow   │  │ Flow     │  │ Flow       │  │ Flow     │ │
+│  └───┬────┘  └────┬─────┘  └─────┬──────┘  └────┬─────┘ │
+│      │            │              │              │       │
+│  ┌───▼───────────────────────────────────────────────┐  │
+│  │ Shared Runtime Services                           │  │
+│  │ - Mood Engine                                     │  │
+│  │ - Episodic Memory                                 │  │
+│  │ - Conversation Contraction                        │  │
+│  │ - Scheduler                                       │  │
+│  └───┬───────────────────────────────────────────────┘  │
+│      │                                                  │
+│  ┌───▼───────────────────────────────────────────────┐  │
+│  │ Agent / Decision Layer                            │  │
+│  │ - Chat Agent                                      │  │
+│  │ - Life Agent                                      │  │
+│  │ - Tools (Spotify, Search, Reminder, Calendar)     │  │
+│  └──────────────────┬────────────────────────────────┘  │
+│                     │                                   │
+│  ┌──────────────────▼────────────────────────┐          │
+│  │          OUTPUT SINK                      │          │
+│  └──────────────────┬────────────────────────┘          │
+└─────────────────────┼───────────────────────────────────┘
+                      │ OutboundMessage
+┌─────────────────────▼───────────────────────────────────┐
+│                    OUTPUT LAYER                         │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐              │
+│   │ Discord  │  │ Telegram │  │ Webhook  │              │
+│   │  Output  │  │  Output  │  │ + TTS    │              │
+│   └──────────┘  └──────────┘  └──────────┘              │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Architecture Pros and Cons
+## Architectural Priorities
 
-### ✅ Strengths
+The current design favors modularity and coordination over minimalism.
 
-**1. Highly Extensible**
-- Adapter pattern makes it trivial to add new platforms
-- Want to add Slack? Create input/output adapters, wire them in, done
-- Backend adapters let you swap Redis for other storage without touching core logic
-
-**2. Clean Separation of Concerns**
-- Each component has one clear responsibility
-- Orchestrator coordinates, doesn't implement business logic
-- Mood engine is stateless and testable in isolation
-- Memory systems are backend-agnostic via protocols
-
-**3. Resilient by Design**
-- Async-first with proper error handling everywhere
-- Graceful degradation (timeouts, fallbacks, neutral defaults)
-- Output sink isolates failures (one platform down ≠ system down)
-- Structured logging for debugging
-
-**4. Sophisticated Features**
-- Real emotional continuity across conversations
-- Long-term memory with semantic search
-- Proactive behavior via scheduler
-- Automatic history management prevents context overflow
-
-**5. Thread Isolation**
-- Per-user/per-channel conversation state
-- Multiple users don't interfere with each other
-- Thread ID resolution handles complex routing scenarios
-
-### ❌ Limitations
-
-**1. Heavy Redis Dependency**
-- All production backends use Redis (bus, state, memory, scheduler)
-- In-memory alternatives exist but are commented out in main.py
-- Redis becomes a single point of failure
-- Requires Redis infrastructure for any serious deployment
-
-**2. Complexity Overhead**
-- Many moving parts for a chatbot
-- Steep learning curve for contributors
-- Multiple async event loops to reason about
-- Protocol-based interfaces add indirection
-
-**3. Tight Coupling in Orchestrator**
-- `_handle_chat()` orchestrates 8 sequential steps
-- Knows about compact trigger policy directly
-- Could benefit from more event-driven decomposition
-
-**4. Limited Testing**
-- Only `smoke_imports.py` test exists
-- Complex mood engine has no unit tests
-- Orchestrator coordination logic untested
-- Memory compaction edge cases unverified
-
-**5. Resource Intensive**
-- Requires Python 3.13+ (strict version lock)
-- Multiple LLM calls per turn (chat + mood + compaction + life)
-- Vector embeddings add memory/CPU overhead
-- Redis VL for vector search needs sufficient RAM
-
-**6. Scheduler Limitations**
-- Relative-time only (no absolute wall-clock scheduling)
-- No custom callbacks (everything goes through message bus)
-- Final behavior depends on orchestrator's source handling
-- Limited to interval-based triggers (no cron-like expressions)
-
----
-
-## When to Use This Architecture
-
-### ✅ Good Fit For:
-- Multi-platform AI companions/assistants
-- Systems needing emotional continuity
-- Applications with long-term memory requirements
-- Projects requiring platform flexibility
-- Research into AI emotional intelligence
-
-### ❌ Poor Fit For:
-- Simple single-platform bots
-- Resource-constrained environments
-- Projects needing quick time-to-market
-- Systems without Redis infrastructure
-- Stateless conversational interfaces
+It is built around:
+- an orchestrator that routes envelopes into specialized flows
+- adapter boundaries for platform and backend integration
+- persistent runtime state for continuity across turns
+- scheduled internal events that feed back into the same runtime
+- layered services instead of a single monolithic agent entrypoint
 
 ---
 
@@ -255,12 +205,11 @@ Routes outbound messages:
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Python 3.13 (strict) |
+| Language | Python 3.13  |
 | Agent Framework | LangGraph 1.0+ |
 | LLM Abstraction | LangChain |
-| LLM Provider | Groq (openai/gpt-oss models) |
-| Infrastructure | Redis (state, memory, scheduling, bus) |
-| Vector Search | RedisVL |
+| LLM Provider | Groq (for now but could be any) |
+| Vector Search | RedisVL/Pinecone/InMemory cosine similarity |
 | Web Framework | FastAPI + Uvicorn |
 | Platform SDKs | Discord.py, python-telegram-bot |
 | Embeddings | FastEmbed (BAAI/bge-small-en-v1.5) |
@@ -270,30 +219,14 @@ Routes outbound messages:
 
 ## Key Design Decisions
 
-**Why Redis for Everything?**
-- Single infrastructure dependency
-- Excellent async support in Python
-- Built-in queue operations for message bus
-- RedisVL provides vector search without separate database
-- Atomic operations prevent race conditions
+**Envelope-first routing**
+- The orchestrator branches on `MessageEnvelope.source` before doing agent work. This ensures the correct separation of concerns for every event type while using the gateway as the only incoming entry point.
 
-**Why Dual Agent System?**
-- Chat agent focuses on user-facing responses
-- Life agent handles background reflection
-- Separation prevents internal processing from blocking user interactions
-- Different models can be used (120B for chat, 20B for reflection)
+**Separate chat and life services**
+- Normal conversation and background life reflection are implemented as different services with different graphs. This keeps reflective note generation out of the normal reply path.
 
-**Why Message Bus Architecture?**
-- Decouples input from processing
-- Enables async event-driven design
-- Makes scheduling natural (triggers = messages)
-- Allows future parallel processing
-
-**Why Stateless Mood Engine?**
-- Thread state belongs in state store, not engine
-- Makes testing easier (pass in state, get out state)
-- Reusable across threads and scenarios
-- Clear boundary between logic and data
+**Stateless turns**
+- The runtime persists mood, history, life notes, interaction state, and episodic memory between turns. Background compaction and proactive scheduling are built around that persisted state. The major benefit of storing all the state separately is better control and avoiding non-deterministic behavior inside the internal agent graph.
 
 ---
 
@@ -301,22 +234,23 @@ Routes outbound messages:
 
 ### Adding a New Platform
 
-1. Create input adapter implementing `InputAdapter` protocol
-2. Create output adapter implementing `OutputAdapter` protocol
-3. Publish `MessageEnvelope` to bus from input
-4. Wire adapters in `main.py`
+1. Add a runtime for the platform under `src/adapters/runtime/` if the platform needs its own connection lifecycle.
+2. Add an input adapter under `src/adapters/input/` that converts platform events into `MessageEnvelope` objects and publishes them to the message bus.
+3. Add an output adapter under `src/adapters/output/` that accepts `OutboundMessage` objects and sends them back to that platform.
+4. Register the new input and output adapters in the builder paths in `main.py`.
 
 ### Adding a New Tool
 
-1. Extend `langchain_core.tools.BaseTool`
-2. Implement `_arun` async method
-3. Add to agent's tool list in `main.py`
+1. Create a new tool class under `src/tools/` by extending `langchain_core.tools.BaseTool`.
+2. Implement the tool logic in `_arun`.
+3. Pass in any required dependencies through the tool constructor.
+4. Add the tool to the chat or life agent wiring in `main.py`, depending on which flow should use it.
 
 ### Swapping Backends
 
-1. Implement protocol (e.g., `MessageBus`, `StateStore`)
-2. Create new adapter in `src/adapters/`
-3. Swap instantiation in `main.py`
+1. Implement the relevant protocol from `src/shared_types/protocol.py`, such as `MessageBus`, `StateStore`, `EpisodicMemoryBackend`, or `SchedulerBackend`.
+2. Add the new implementation under the matching adapter module in `src/adapters/`.
+3. Replace the default backend wiring in `main.py`.
 
 ---
 
@@ -324,29 +258,32 @@ Routes outbound messages:
 
 ```
 src/
-├── adapters/          # Pluggable platform and backend code
-│   ├── input/         # Discord, Telegram, Webhook, Console
-│   ├── output/        # Discord, Telegram, Webhook, Console
-│   ├── runtime/       # Platform lifecycle management
-│   ├── bus/           # Message queue implementations
-│   ├── state/         # State storage backends
+├── adapters/          # Platform, transport, storage, and runtime integrations
+│   ├── audio/         # STT and TTS adapters
+│   ├── bus/           # Message bus backends
+│   ├── http/          # HTTP routes for dashboard, logs, metrics, ping
+│   ├── input/         # Inbound platform adapters
+│   ├── life/          # Life-state adapter layer
 │   ├── memory/        # Episodic memory backends
+│   ├── output/        # Outbound delivery adapters
+│   ├── runtime/       # Platform runtime implementations
 │   ├── scheduler/     # Scheduler backends
-│   └── audio/         # STT (Whisper) and TTS (EdgeTTS)
-├── agent/             # LangGraph agent implementations
-│   ├── chat/          # Main ReAct conversational agent
-│   └── life/          # Internal reflection agent
-├── core/              # Core business logic
-│   ├── orchestrator.py        # Runtime coordinator
-│   ├── mood_engine.py         # Emotion tracking
-│   ├── episodic_memory.py     # Long-term fact storage
-│   ├── conversation_contraction.py  # History management
-│   ├── scheduler.py           # Proactive behavior
-│   └── outputsink.py          # Response routing
-├── tools/             # Agent tools (Spotify, reminders, etc.)
+│   └── state/         # State store backends
+├── agent/             # LangGraph-backed agent services
+│   ├── chat/          # Main conversational flow
+│   └── life/          # Internal reflection flow
+├── core/              # Runtime coordination and shared services
+│   ├── orchestrator.py              # Envelope router and flow coordinator
+│   ├── mood_engine.py               # Mood analysis and tracking
+│   ├── episodic_memory.py           # Memory recall and storage service
+│   ├── conversation_contraction.py  # History compaction
+│   ├── scheduler.py                 # Trigger scheduling and dispatch
+│   └── outputsink.py                # Output routing
+├── dashboard/         # Static dashboard assets
+├── logger/            # Structured logging
+├── shared_types/      # Shared models, protocols, and schemas
 ├── templates/         # Prompt templates
-├── shared_types/      # Models, protocols, and types
-└── logger/            # Structured logging
+└── tools/             # Agent tools
 ```
 
 ---

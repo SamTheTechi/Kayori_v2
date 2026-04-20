@@ -20,7 +20,8 @@ class InMemoryEpisodicMemory:
         namespace: str | None = "kayori-episodic",
     ) -> None:
         self.embedding = embedding
-        self.namespace = str(namespace or "kayori-episodic").strip() or "kayori-episodic"
+        self.namespace = str(
+            namespace or "kayori-episodic").strip() or "kayori-episodic"
         self.records: dict[str, dict[str, dict[str, Any]]] = {}
         self.vectors: dict[str, dict[str, list[float]]] = {}
         self._lock = asyncio.Lock()
@@ -74,7 +75,8 @@ class InMemoryEpisodicMemory:
                         content=str(record.get("content") or ""),
                         metadata=dict(record.get("metadata") or {}),
                     ),
-                    backend_score=self._cosine_similarity(query_vector, vector),
+                    backend_score=self._cosine_similarity(
+                        query_vector, vector),
                 )
             )
 

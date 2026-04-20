@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, replace
 
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.logger import get_logger
 from src.shared_types.models import MessageSource, OutboundMessage
+from src.shared_types.protocol import OutputAdapter
 
 logger = get_logger("output.telegram")
 
 
 @dataclass(slots=True)
-class TelegramOutputAdapter:
+class TelegramOutputAdapter(OutputAdapter):
     runtime: TelegramRuntime
     default_chat_id: str | None = None
 
@@ -49,30 +51,27 @@ class TelegramOutputAdapter:
             )
             return
 
-        chunks = _split_telegram_chunks(
-            message.content, max_len=self.max_chunk_len)
+        if message.audio is not None:
+            await self._send_audio(chat_id=chat_id, message=message)
+
+        text = str(message.content or "").strip()
+        chunks = _split_telegram_chunks(text, max_len=self.max_chunk_len)
         if not chunks:
-            await self._send_one(chat_id=chat_id, message=message)
             return
 
-        first = True
+        first = message.audio is None
         for chunk in chunks:
             chunk_message = replace(
                 message,
                 content=chunk,
                 reply_to_message_id=message.reply_to_message_id if first else None,
-                # attachments=message.attachments if first else [],
             )
             await self._send_one(chat_id=chat_id, message=chunk_message)
             first = False
 
     async def _send_one(self, *, chat_id: str, message: OutboundMessage) -> None:
-        # text_content = _compose_text_with_media(
-        #     message.content, message.attachments)
-
         payload: dict[str, object] = {
             "chat_id": chat_id,
-            # "text": text_content,
             "text": message.content
         }
 
@@ -84,6 +83,34 @@ class TelegramOutputAdapter:
                 pass
 
         await self.runtime.bot.send_message(**payload)
+
+    async def _send_audio(self, *, chat_id: str, message: OutboundMessage) -> None:
+        audio_bytes = message.audio_bytes()
+        if not audio_bytes:
+            return
+
+        payload = io.BytesIO(audio_bytes)
+        payload.name = (message.audio.filename if message.audio else None) or "reply.ogg"
+        send_kwargs: dict[str, object] = {"chat_id": chat_id}
+
+        if message.source == MessageSource.TELEGRAM and message.reply_to_message_id:
+            try:
+                send_kwargs["reply_to_message_id"] = int(message.reply_to_message_id)
+            except Exception:
+                pass
+
+        mime_type = str((message.audio.mime_type if message.audio else None) or "").lower()
+        if "ogg" in mime_type or message.voice_mode:
+            await self.runtime.bot.send_voice(
+                voice=payload,
+                **send_kwargs,
+            )
+            return
+
+        await self.runtime.bot.send_audio(
+            audio=payload,
+            **send_kwargs,
+        )
 
 
 def _resolve_chat_id(
@@ -129,14 +156,3 @@ def _split_telegram_chunks(content: str, max_len: int = 4000) -> list[str]:
         chunks.append(chunk)
         remaining = remaining[split_at:].lstrip("\n")
     return chunks
-
-#
-# def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
-#     if not attachments:
-#         return content
-#     lines = [content.strip()] if content.strip() else []
-#     lines.append("Media:")
-#     for item in attachments[:4]:
-#         detail = item.url or item.filename or "[embedded]"
-#         lines.append(f"- {item.kind}: {detail}")
-#     return "\n".join(lines)

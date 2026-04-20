@@ -4,68 +4,15 @@ Tools give the agent abilities to interact with the real world: search the web, 
 
 ## Available Tools
 
-| Tool | Purpose | Async | API Keys Required |
-|------|---------|-------|-------------------|
-| ReminderTool | Schedule delayed messages | ✅ | No |
-| SpotifyTool | Control Spotify playback | ✅ | Yes (OAuth) |
-| TavilySearch | Web search | ✅ | Yes (Tavily) |
-| CalendarTools | Google Calendar integration | ✅ | Yes (Google) |
-| LifeInfoTool | Read/write life profile | ✅ | No |
-| WeatherTool | Weather lookup | ✅ | Yes (Weather API) |
-| GmailTools | Gmail integration | ✅ | Yes (Google) |
-
-**Currently Enabled:**
-- ReminderTool
-- LifeInfoTool
-- SpotifyTool
-- TavilySearch
-
-**Commented Out:**
-- WeatherTool (needs API key)
-- GmailTools (needs Google OAuth)
-
----
-
-## How Tools Work
-
-### ReAct Pattern
-
-The agent uses the **ReAct** (Reason + Act) pattern:
-
-```
-User: "What's the weather like?"
-Agent thinks: "I should search weather info"
-Agent calls: WeatherTool(location="...")
-Agent gets: "Sunny, 72°F"
-Agent responds: "It's sunny and 72 degrees!"
-```
-
-### Tool Execution Flow
-
-```
-1. User message → Agent
-2. Agent decides to use tool
-3. Agent calls tool._arun(args)
-4. Tool executes (may call external APIs)
-5. Tool returns result string
-6. Agent uses result in response
-```
-
-### Tool Arguments
-
-Tools receive agent state:
-
-```python
-await tool._arun(
-    command="play",
-    query="Bohemian Rhapsody",
-    state={
-        "envelope": MessageEnvelope(...),
-        "messages": [...],
-        ...
-    }
-)
-```
+| Tool | Purpose | API Keys Required |
+|------|---------|-------------------|
+| ReminderTool | Schedule delayed messages | No |
+| SpotifyTool | Control Spotify playback | Yes (OAuth) |
+| TavilySearch | Web search | Yes (Tavily) |
+| CalendarTools | Google Calendar integration | Yes (Google) |
+| LifeInfoTool | Read/write life profile | No |
+| WeatherTool | Weather lookup | Yes (Weather API) |
+| GmailTools | Gmail integration | Yes (Google) |
 
 ---
 
@@ -97,17 +44,6 @@ delay_minutes: int = 15          # How long to wait (1-1440)
 content: str | None = None       # Reminder text
 target_user_id: str | None = None # Who to remind
 ```
-
-### Pros
-✅ Simple async sleep implementation  
-✅ No external dependencies  
-✅ Routes through output sink (respects platform)  
-
-### Cons
-❌ Not persistent (lost on restart)  
-❌ Uses `asyncio.sleep` (not robust)  
-❌ No recurring reminders  
-❌ No snooze support  
 
 ---
 
@@ -161,19 +97,6 @@ SpotifyTool()._arun(command="volume_up", step=10)
 3. Uses spotipy library
 4. All calls wrapped in `asyncio.to_thread()` (sync library)
 
-### Pros
-✅ Full playback control  
-✅ Search with fallback (track → artist top tracks)  
-✅ Volume control  
-✅ Device-aware (finds active device)  
-
-### Cons
-❌ Requires Spotify Premium  
-❌ OAuth setup needed  
-❌ Needs active Spotify device  
-❌ spotipy is sync (thread pool overhead)  
-❌ Rate limited by Spotify API  
-
 ---
 
 ## TavilySearch
@@ -203,16 +126,6 @@ search = TavilySearch(max_results=3, topic="general")
 - Returns search snippets
 - LangChain native tool
 
-### Pros
-✅ Simple API  
-✅ Good search quality  
-✅ LangChain integration  
-
-### Cons
-❌ Requires Tavily API key  
-❌ Limited results (max 3)  
-❌ No pagination  
-
 ---
 
 ## CalendarTools
@@ -230,15 +143,6 @@ Requires Google OAuth credentials.
 - List upcoming events
 - Create calendar events
 - Check availability
-
-### Pros
-✅ Google Calendar integration  
-✅ Useful for scheduling  
-
-### Cons
-❌ Complex Google OAuth setup  
-❌ Requires Google Cloud project  
-❌ Sync API calls  
 
 ---
 
@@ -260,19 +164,9 @@ LifeInfoTool(state_store=state)
 - User preferences, goals, interests
 - Long-term context about user
 
-### Pros
-✅ No API keys needed  
-✅ Uses existing state store  
-✅ Persistent profile  
-
-### Cons
-❌ Simple text storage  
-❌ No structured data  
-❌ Manual updates  
-
 ---
 
-## WeatherTool (Commented Out)
+## WeatherTool
 
 ### What It Does
 
@@ -291,18 +185,9 @@ WEATHER_DEFAULT_LOCATION=New York
 - Uses geopy for geocoding
 - Current conditions
 
-### Pros
-✅ Location-aware  
-✅ Geocoding support  
-
-### Cons
-❌ Requires weather API key  
-❌ Geopy adds dependency  
-❌ Not enabled by default  
-
 ---
 
-## GmailTools (Commented Out)
+## GmailTools
 
 ### What It Does
 
@@ -317,15 +202,6 @@ Requires Google OAuth credentials.
 - Read emails
 - Search inbox
 - Send emails
-
-### Pros
-✅ Email access  
-✅ Google integration  
-
-### Cons
-❌ Complex OAuth setup  
-❌ Security concerns  
-❌ Not enabled by default  
 
 ---
 
@@ -371,69 +247,7 @@ agent = ReactAgentService(model=chat_model, tools=tools)
 
 ---
 
-## Tool Pros and Cons (Overall)
-
-### ✅ Strengths
-
-**LangChain Integration**
-- Standard tool interface
-- Easy to add/remove tools
-- ReAct pattern handles orchestration
-
-**Async-First**
-- All tools use `_arun()`
-- Non-blocking execution
-- Proper error handling
-
-**State Access**
-- Tools receive agent state
-- Can access envelope, messages, mood
-- Context-aware tool behavior
-
-**Error Isolation**
-- Tool failures caught by agent
-- User sees friendly error
-- Logged for debugging
-
-### ❌ Limitations
-
-**Sequential Execution**
-- One tool at a time
-- No parallel tool calls
-- ReAct loop adds latency
-
-**No Tool Composition**
-- Can't chain tools automatically
-- Agent must call each separately
-- No multi-tool workflows
-
-**Limited Tool Context**
-- State dict passed manually
-- No type safety
-- Easy to misuse
-
-**Persistence Gaps**
-- Reminders lost on restart
-- No durable task queue
-- Asyncio.sleep not robust
-
-**API Key Management**
-- Each tool needs keys
-- Env vars only
-- No key rotation
-
----
-
 ## Configuration
-
-```env
-# Tool API Keys
-TAVILY_API_KEY=
-WEATHER_API_KEY=
-SPOTIFY_CLIENT_ID=
-SPOTIFY_CLIENT_SECRET=
-SPOTIFY_REDIRECT_URI=
-```
 
 Tools added in `main.py`:
 

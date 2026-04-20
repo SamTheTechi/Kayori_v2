@@ -5,10 +5,10 @@ Long-term fact storage with semantic search.
 ## What It Does
 
 Stores durable facts about users and retrieves relevant ones during conversations:
-- 💾 Remembers facts (name, preferences, goals)
-- 🔍 Finds relevant memories via semantic search
-- 🧹 Automatically cleans up old/weak memories
-- 📂 Categorizes facts (identity, preference, relationship, etc.)
+- Stores normalized fact records
+- Retrieves relevant records through the configured backend
+- Ranks recall results with similarity, importance, and confidence
+- Compacts old records when a maximum episode count is set
 
 ## How It Works
 
@@ -17,7 +17,6 @@ Stores durable facts about users and retrieves relevant ones during conversation
 **1. remember()** - Store a fact
 ```python
 await memory.remember(
-    thread_id="user123",
     fact="User loves Python",
     source="conversation",
     category="preference",
@@ -32,16 +31,13 @@ await memory.remember(
 facts = await memory.recall(
     query="What does the user like?",
     limit=3,
-    thread_id="user123"
 )
-# Returns top 3 relevant facts ranked
 ```
 
 **3. compact()** - Cleanup old facts
 ```python
 await memory.compact(
-    thread_id="user123",
-    max_episodes=250  # Keep max 250 facts
+    max_episodes=250
 )
 ```
 
@@ -74,48 +70,33 @@ await memory.compact(
 
 ## Retrieval Ranking
 
-Facts ranked by combining:
+Recall ranking uses:
 ```python
 score = (
-    backend_score * 0.7 +      # Vector similarity (70%)
-    importance * 0.2 +         # Importance score (20%)
-    confidence * 0.1           # Confidence (10%)
+    similarity * 0.7
+    + importance * 0.2
+    + confidence * 0.1
 )
 ```
 
-**Why this works:**
-- Semantic search finds related facts
-- Importance boosts durable memories
-- Confidence prevents uncertain facts from ranking high
+The backend score is converted from distance to similarity with:
+
+```python
+similarity = 1.0 / (1.0 + distance)
+```
 
 ## Compaction (Cleanup)
 
-When memory exceeds limit (default 250 facts):
-
-**Eviction score combines:**
-- **Age**: Older facts more likely to delete
-- **Weakness**: Low importance + confidence
-- **Formula**: `(age * 0.7) + (weakness * 0.3)`
-
-**Process:**
-1. Sort facts by eviction score
-2. Delete lowest-scoring facts
-3. Keep most important/confident/recent
+When the number of stored records exceeds the configured maximum:
+1. List all IDs in the namespace
+2. Fetch records in batches
+3. Sort records by timestamp
+4. Compute an eviction score from age and record weakness
+5. Delete the overflow records with the highest eviction score
 
 ## Backend Implementation
 
-Uses **RedisVL** (Redis Vector Library):
-- HNSW index for vector similarity
-- BAAI/bge-small-en-v1.5 embeddings (768 dims)
-- Stored as Redis hashes with vector field
-
-```python
-memory_backend = RedisEpisodicMemory(
-    redis_client=sync_redis,
-    embedding=FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5"),
-    dimension=768
-)
-```
+`EpisodicMemoryStore` depends on the `EpisodicMemoryBackend` protocol. Backend selection is handled outside the store.
 
 ## Runtime Usage
 
@@ -124,81 +105,19 @@ memory_backend = RedisEpisodicMemory(
 facts = await episodic_memory.recall(
     query=user_message,
     limit=2,
-    thread_id=thread_id
 )
-# Pass to agent for context
 ```
 
 **Conversation contraction extracts facts:**
 ```python
-# When compacting history
 for fact in extracted_facts:
     await episodic_memory.remember(
-        thread_id=thread_id,
         fact=fact["fact"],
         source="conversation",
         category=fact["category"],
         importance=fact["importance"]
     )
 ```
-
-## Pros and Cons
-
-### ✅ Strengths
-
-**Semantic Search**
-- Finds related facts, not exact matches
-- Better than keyword search
-- Understands meaning
-
-**Smart Ranking**
-- Combines similarity + importance + confidence
-- Important facts stay accessible
-- Uncertain facts rank lower
-
-**Automatic Cleanup**
-- Prevents unbounded growth
-- Deletes old/weak facts first
-- Keeps memory efficient
-
-**Backend Agnostic**
-- Protocol-based design
-- Works with Redis or in-memory
-- Easy to swap storage
-
-**Categorization**
-- Organized fact types
-- Useful for filtering
-- Clear semantics
-
-### ❌ Limitations
-
-**No Deduplication**
-- Similar facts stored separately
-- Can have duplicates
-- No merging logic
-
-**Fixed Ranking Weights**
-- 70/20/10 hardcoded
-- No learning from feedback
-- May not suit all use cases
-
-**Vector Search Memory**
-- 768 dims × 250 facts = ~1MB RAM
-- Grows with fact count
-- Can hit Redis memory limits
-
-**Simple Categories**
-- Manual categorization
-- No auto-classification
-- "misc" becomes catch-all
-
-**Record Shape**
-- Plain dicts, not strict models
-- No validation
-- Easy to misuse
-
----
 
 ## File Reference
 

@@ -4,12 +4,13 @@ The `AgentOrchestrator` coordinates all runtime services.
 
 ## What It Does
 
-Think of the orchestrator as a **conductor** managing:
+The orchestrator is the runtime entrypoint after messages leave the bus. It is responsible for:
 - Consuming messages from the bus
-- Routing by type (chat, life reflection, history cleanup)
-- Coordinating mood, memory, and agent response
-- Managing one personal conversation state
-- Scheduling proactive tasks
+- Coalescing adjacent inbound envelopes when possible
+- Routing by `MessageEnvelope.source`
+- Coordinating mood analysis, episodic recall, agent response, and state updates
+- Rescheduling background compaction
+- Delivering outbound messages through the output sink
 
 ## Message Flow
 
@@ -17,110 +18,71 @@ Think of the orchestrator as a **conductor** managing:
 1. Consume message from bus
 2. Route by source:
    - LIFE → Run internal reflection
-   - COMPACT → Cleanup history
-   - Other → Handle chat (main path)
+   - COMPACT → Run conversation compaction
+   - PROACTIVE → Run proactive chat path
+   - Other → Run chat path
 ```
 
 ## Chat Turn Path (Main Flow)
 
-When a user message arrives:
+For normal inbound chat messages:
 
 ```
-1. Load context (mood + last 12 messages)
-2. Analyze mood change (LLM classifies emotions)
-3. Recall memories (2 relevant facts from episodic storage)
-4. Generate reply (Chat Agent with tools)
-5. Persist turn (save user message + bot response)
-6. Schedule history cleanup (after 30 min inactivity)
-7. Cleanup now if history > 12 messages
-8. Send response to user
+1. Normalize inbound content, including STT for audio envelopes
+2. Load mood state and recent agent context
+3. Run mood analysis for non-proactive turns
+4. Recall relevant episodic facts
+5. Generate a reply with the chat agent
+6. Persist messages and update interaction state
+7. Reschedule the compaction trigger
+8. Run `maybe_compact()` on the active history
+9. Build and send the outbound message
 ```
 
 ## Key Constants
 
 ```python
-AGENT_WINDOW = 12        # Messages sent to agent
-MOOD_WINDOW = 4          # Messages for mood analysis
-COMPACT_IDLE_SECONDS = 1800  # Wait 30 min before compacting
+AGENT_WINDOW = 12
+MOOD_WINDOW = 4
+COMPACT_IDLE_SECONDS = 1800
+MESSAGE_COALESCE_WINDOW_SECONDS = 0.5
+MAX_PENDING_LIFE_NOTES = 3
 ```
 
 ## Source Routing
 
-Three message types:
+Current routing paths:
 
 | Source | Handler | Purpose |
 |--------|---------|---------|
 | `LIFE` | `_handle_life()` | Internal reflection |
 | `COMPACT` | `_handle_compact()` | History cleanup |
+| `PROACTIVE` | `_handle_proactive()` | Self-initiated outreach |
 | Others | `_handle_chat()` | Normal conversation |
 
 ## Life Reflection
 
-Runs every 20 seconds (configurable):
-1. Loads recent conversation summary
-2. Loads relevant memories
-3. Loads user's life profile
-4. Life Agent reflects and generates life note
-5. Stores note if noteworthy
+The life path:
+1. Prunes expired life notes
+2. Skips work if too many life notes are already pending
+3. Loads the compacted conversation summary, life profile, and recent episodic recall
+4. Calls the life agent to generate a note
+5. Stores the note if the life agent returned one
+
+## Proactive Path
+
+The proactive path is gated by interaction state and current mood:
+- Uses the average of `Trust`, `Attachment`, and `Confidence` to compute a daily send cap
+- Stops if there is no known route source, the cap is exhausted, or the user has ignored recent proactive messages
+- Re-enters the chat path with a synthetic `PROACTIVE` envelope and then routes the final outbound reply back to the last known chat source
 
 ## History Compaction
 
-Two triggers:
-- **Immediate**: If history > 12 messages after a turn
-- **Scheduled**: After 30 minutes of inactivity
+Compaction happens in two places:
+- Immediately after a chat turn via `maybe_compact()`
+- Later through the scheduled `COMPACT` trigger
 
-Process:
-1. Summarize old messages into running summary
-2. Extract important facts to episodic memory
-3. Replace old messages with summary + keep last 4 raw
-
-## Pros and Cons
-
-### ✅ Strengths
-
-**Clear Coordination**
-- Single place for runtime logic
-- Delegates to specialized services
-- Easy to understand flow
-
-**Personal-Agent Simplicity**
-- One state model for one user
-- No thread routing overhead
-- Easier to reason about continuity
-
-**Proactive Design**
-- Background reflection
-- Automatic history management
-- Customizable scheduling
-
-**Error Resilient**
-- Failures logged with context
-- One component failing doesn't crash system
-- Graceful degradation
-
-### ❌ Limitations
-
-**Sequential Steps**
-- `_handle_chat()` runs 8 steps in sequence
-- Each step blocks next
-- Could be more parallel
-
-**Tight Coupling**
-- Knows about compact trigger policy
-- Manages scheduler directly
-- Could be more event-driven
-
-**Life Reflection Frequency**
-- 20 seconds seems very frequent
-- May generate redundant notes
-- No adaptive scheduling
-
-**Limited Testing**
-- Complex coordination logic untested
-- Edge cases unverified
-- No integration tests
-
----
+The compaction service is responsible for summarizing older history, extracting facts into episodic memory, and replacing old messages with a compacted summary plus recent raw messages.
 
 ## File Reference
 

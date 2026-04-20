@@ -1,25 +1,21 @@
 # Backend Adapters
 
-Backend adapters provide infrastructure services: message queuing, state storage, memory, and scheduling.
+Backend adapters implement infrastructure services for bus, state, episodic memory, and scheduling.
 
 ## Available Backend Adapters
 
-| Category | Production | Development |
-|----------|-----------|-------------|
-| Message Bus | RedisMessageBus | InMemoryMessageBus |
-| State Store | RedisStateStore | InMemoryStateStore |
-| Episodic Memory | RedisEpisodicMemory | InMemoryEpisodicMemory |
-| Scheduler | RedisSchedulerBackend | InMemorySchedulerBackend |
+| Category | Implementations |
+|----------|-----------------|
+| Message Bus | `RedisMessageBus`, `InMemoryMessageBus` |
+| State Store | `RedisStateStore`, `InMemoryStateStore` |
+| Episodic Memory Backend | `RedisEpisodicMemory`, `InMemoryEpisodicMemory`, `PineconeEpisodicMemory` |
+| Scheduler Backend | `RedisSchedulerBackend`, `InMemorySchedulerBackend` |
 
-**Note:** Production uses Redis for everything in the current runtime.
-
----
+The current runtime in `main.py` wires Redis for bus, state, scheduler, and episodic memory.
 
 ## Message Bus
 
-**Purpose:** Queue for asynchronous message processing
-
-### Protocol
+Protocol:
 
 ```python
 class MessageBus(Protocol):
@@ -29,209 +25,98 @@ class MessageBus(Protocol):
 
 ### RedisMessageBus
 
-**How it works:**
-- `publish()` → `LPUSH` to Redis list
-- `consume()` → `BRPOP` from Redis list (blocking)
-
-```python
-bus = RedisMessageBus(
-    redis_client=async_redis,
-    queue_key="kayori:message_queue"
-)
-```
-
-**Pros:**
-✅ Persistent across restarts  
-✅ Distributed (multiple consumers)  
-✅ Simple queue semantics  
-
-**Cons:**
-❌ Requires Redis infrastructure  
-❌ Single queue (no priority)  
-❌ Messages lost if Redis down  
+Current behavior:
+- `publish()` serializes the envelope and `LPUSH`es it to the queue key
+- `consume()` blocks on `BRPOP` and reconstructs `MessageEnvelope`
+- default queue key is `kayori:message_queue`
 
 ### InMemoryMessageBus
 
-**How it works:**
-- Python `asyncio.Queue` internally
-- Volatile, lost on restart
-
-```python
-# bus = InMemoryMessageBus()  # Commented out
-```
-
-**Pros:**
-✅ Zero dependencies  
-✅ Fast (no network)  
-✅ Perfect for testing  
-
-**Cons:**
-❌ Lost on restart  
-❌ Single process only  
-❌ Not for production  
-
----
+Current behavior:
+- wraps an `asyncio.Queue`
+- keeps all messages in-process only
 
 ## State Store
 
-**Purpose:** Store conversation state, mood, life notes, user profiles
-
-### Protocol
+Protocol:
 
 ```python
 class StateStore(Protocol):
     async def get_mood(self) -> MoodState: ...
     async def set_mood(self, mood: MoodState) -> None: ...
     async def get_history(self) -> MessagesHistory: ...
-    async def append_messages(self, msgs: list) -> None: ...
-    async def replace_messages(self, msgs: list) -> None: ...
+    async def append_messages(self, msgs: list[BaseMessage]) -> None: ...
+    async def replace_messages(self, msgs: list[BaseMessage]) -> None: ...
+    async def get_interaction_state(self) -> InteractionState: ...
+    async def set_interaction_state(self, state: InteractionState) -> None: ...
     async def get_life_profile(self) -> str: ...
     async def replace_life_profile(self, profile: str) -> None: ...
     async def get_life_notes(self) -> list[LifeNote]: ...
     async def append_life_note(self, note: LifeNote) -> None: ...
-    # ... more methods
+    async def consume_life_note(self) -> LifeNote | None: ...
+    async def prune_life_notes(self, *, max_age_seconds: float) -> int: ...
 ```
 
 ### RedisStateStore
 
-**How it works:**
-- Stores state as JSON in Redis keys
-- Personal-agent keys without thread partitioning
+Current behavior:
+- stores mood, history, interaction state, life profile, and life notes as Redis keys
+- preserves a compacted summary message at the front of history when present
+- includes a legacy mood hash migration path
 
-**Key Structure:**
-```
-kayori:state:mood                   → MoodState JSON
-kayori:state:history                → MessagesHistory JSON
-kayori:state:life_profile           → Profile text
-kayori:state:life_notes             → LifeNote[] JSON
-```
+Current key prefixes:
+- `kayori:state:mood`
+- `kayori:state:history`
+- `kayori:state:interaction`
+- `kayori:state:life_profile`
+- `kayori:state:life_notes`
 
-```python
-state = RedisStateStore(redis_client=async_redis)
-```
-
-**Pros:**
-✅ Persistent across restarts  
-✅ Simple personal-agent state  
-✅ Atomic operations  
-✅ Fast key-value access  
-
-**Cons:**
-❌ JSON serialization overhead  
-❌ Large histories hit Redis memory  
-❌ No relational queries  
+This store is global in the current runtime. It is not partitioned by thread or channel.
 
 ### InMemoryStateStore
 
-**How it works:**
-- Python dicts internally
-- Volatile, lost on restart
+Current behavior:
+- stores the same state model in Python objects guarded by an `asyncio.Lock`
+- is process-local and non-persistent
 
-```python
-# state = InMemoryStateStore()  # Commented out
-```
+## Episodic Memory Backend
 
-**Pros:**
-✅ Zero dependencies  
-✅ Instant access  
-✅ Perfect for testing  
-
-**Cons:**
-❌ Lost on restart  
-❌ Single process only  
-❌ Memory grows unbounded  
-
----
-
-## Episodic Memory
-
-**Purpose:** Long-term fact storage with semantic search
-
-### Protocol
+Protocol:
 
 ```python
 class EpisodicMemoryBackend(Protocol):
-    async def upsert(self, record_id: str, content: str, metadata: dict) -> None: ...
-    async def search(self, query: str, limit: int) -> list[SearchResult]: ...
-    async def list_ids(self) -> list[str]: ...
-    async def fetch_records(self, ids: list[str]) -> list[Record]: ...
-    async def delete(self, ids: list[str]) -> None: ...
+    async def upsert(...): ...
+    async def search(...): ...
+    async def list_ids(...): ...
+    async def fetch_records(...): ...
+    async def delete(...): ...
 ```
 
 ### RedisEpisodicMemory
 
-**How it works:**
-- Uses RedisVL (Redis Vector Library)
-- HNSW index for vector similarity search
-- Embeddings from BAAI/bge-small-en-v1.5 (768 dimensions)
+Current behavior:
+- stores records in Redis hashes under `kayori:memory:episodic:{namespace}:{record_id}`
+- uses `redisvl` for vector indexing and search
+- stores `record_id`, `namespace`, `content`, `metadata_json`, and `embedding`
+- creates the search index if it does not already exist
 
-```python
-memory_backend = RedisEpisodicMemory(
-    redis_client=sync_redis,
-    embedding=FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5"),
-    index_name="kayori_episodic_idx",
-    dimension=768
-)
-```
+### PineconeEpisodicMemory
 
-**Storage Format:**
-```
-Redis Hash: kayori:memory:episodic:{namespace}:{record_id}
-  - record_id: "FM-abc123"
-  - namespace: "kayori-episodic:thread123"
-  - content: "fact: User likes Python\ncontext: ..."
-  - metadata_json: {"fact": "...", "importance": 3, ...}
-  - embedding: <binary vector>
-```
-
-**Retrieval Ranking:**
-```python
-score = (
-    backend_score * 0.7 +      # Vector similarity
-    importance * 0.2 +         # Importance (1-5 scale)
-    confidence * 0.1           # Confidence (0-1 scale)
-)
-```
-
-**Pros:**
-✅ Semantic search (finds related facts)  
-✅ Persistent storage  
-✅ Automatic compaction  
-✅ Importance/confidence ranking  
-
-**Cons:**
-❌ Requires Redis with RedisVL  
-❌ Vector index uses significant RAM  
-❌ Embedding model adds dependency  
-❌ 768 dimensions × thousands of facts = memory heavy  
+Current behavior:
+- creates a Pinecone index when missing
+- uses `PineconeVectorStore` for async similarity search
+- supports the same backend protocol shape as the Redis implementation
 
 ### InMemoryEpisodicMemory
 
-**How it works:**
-- Local vector database
-- Uses sklearn or similar for similarity
-
-```python
-# memory_backend = InMemoryEpisodicMemory(embedding=embedding_model)  # Commented out
-```
-
-**Pros:**
-✅ No Redis needed  
-✅ Fast for small datasets  
-✅ Perfect for testing  
-
-**Cons:**
-❌ Lost on restart  
-❌ Doesn't scale  
-❌ No distributed search  
-
----
+Current behavior:
+- stores records and vectors in Python dictionaries
+- computes cosine similarity in-process
+- is useful for testing or small local runs
 
 ## Scheduler Backend
 
-**Purpose:** Store and retrieve scheduled triggers
-
-### Protocol
+Protocol:
 
 ```python
 class SchedulerBackend(Protocol):
@@ -246,158 +131,44 @@ class SchedulerBackend(Protocol):
 
 ### RedisSchedulerBackend
 
-**How it works:**
-- Stores triggers as JSON in Redis
-- Polls for due triggers every 1 second
-- Reschedules repeating triggers automatically
-
-```python
-scheduler_backend = RedisSchedulerBackend(redis_client=async_redis)
-scheduler = AgentScheduler(backend=scheduler_backend, bus=bus)
-```
-
-**Trigger Storage:**
-```
-Redis key: kayori:scheduler:trigger:{trigger_id}
-  → Trigger JSON with _scheduled_for timestamp
-```
-
-**Polling Loop:**
-```python
-while running:
-    now = time.time()
-    due_triggers = await backend.pop_due(now)
-    for trigger in due_triggers:
-        await dispatch(trigger)
-    await asyncio.sleep(1.0)  # tick_interval
-```
-
-**Pros:**
-✅ Persistent across restarts  
-✅ Restore triggers on boot  
-✅ Distributed (single consumer)  
-
-**Cons:**
-❌ Polling-based (not event-driven)  
-❌ 1-second tick delay  
-❌ Requires Redis  
+Current behavior:
+- stores trigger payloads as JSON at `scheduler:trigger:{trigger_id}`
+- stores due-ordering in the sorted set `scheduler:heap`
+- stores suppression timestamps in `scheduler:suppress`
+- `pop_due()` removes or requeues due triggers based on suppression state
 
 ### InMemorySchedulerBackend
 
-**How it works:**
-- Python list of triggers
-- Volatile, lost on restart
-
-```python
-# scheduler_backend = InMemorySchedulerBackend()  # Commented out
-```
-
-**Pros:**
-✅ Zero dependencies  
-✅ Instant trigger firing  
-✅ Perfect for testing  
-
-**Cons:**
-❌ Lost on restart  
-❌ No distributed support  
-❌ Not for production  
-
----
-
-## Backend Adapter Pros and Cons (Overall)
-
-### ✅ Strengths
-
-**Protocol-Based Design**
-- Core logic doesn't know about Redis
-- Swap backends without code changes
-- Test with in-memory implementations
-
-**Redis Unification**
-- Single infrastructure dependency
-- All state in one place
-- Easier to monitor and backup
-
-**Persistence**
-- State survives restarts
-- Triggers restored on boot
-- Memories persist across sessions
-
-**Thread Isolation**
-- Per-thread state in Redis keys
-- No cross-talk between conversations
-- Scalable to many users
-
-### ❌ Limitations
-
-**Redis Dependency**
-- Single point of failure
-- Requires Redis infrastructure
-- RedisVL adds complexity
-- Memory limits for large deployments
-
-**No In-Memory Production Path**
-- In-memory adapters commented out
-- Effectively requires Redis
-- Development needs Redis too
-
-**Serialization Overhead**
-- JSON encode/decode on every access
-- Large histories hit performance
-- No compression
-
-**Limited Query Capabilities**
-- Key-value only (no SQL)
-- Can't query across threads
-- Hard to analyze state
-
-**Vector Search Memory**
-- 768 dims × 10k facts = ~30MB RAM
-- Grows linearly with facts
-- No pagination support
-
----
+Current behavior:
+- stores triggers in a min-heap
+- keeps suppression state in a dict
+- does not persist across restarts
 
 ## Configuration
 
-```env
-# Redis
-REDIS_URL=redis://localhost:6379
+Current production backend wiring uses:
 
-# All backends use same Redis instance
-# No separate configuration per backend
+```env
+REDIS_URL=redis://localhost:6379
 ```
 
----
+Pinecone support additionally requires the corresponding API credentials if that backend is selected in code.
 
-## When to Use Which Backend
+## File References
 
-### Production
-- **Always Redis**: Persistence, distributed, reliable
-
-### Development
-- **Redis still recommended**: Matches production behavior
-- **In-memory okay for**: Quick tests, CI pipelines
-
-### Testing
-- **In-memory preferred**: Fast, isolated, no setup
-- **Mock protocols**: Even faster, full control
-
----
-
-## Key Takeaways
-
-1. **Protocols enable swapping**: Core doesn't care about implementation
-2. **Redis is production standard**: All backends use it
-3. **In-memory exists for testing**: But commented out in main.py
-4. **Personal-agent state is simple**: Redis keys no longer need thread partitioning
-5. **Persistence matters**: Survives restarts, restores state
-
----
+- [`src/adapters/bus/redis_bus.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/bus/redis_bus.py)
+- [`src/adapters/bus/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/bus/in_memory.py)
+- [`src/adapters/state/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/state/redis.py)
+- [`src/adapters/state/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/state/in_memory.py)
+- [`src/adapters/memory/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/redis.py)
+- [`src/adapters/memory/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/in_memory.py)
+- [`src/adapters/memory/pinecone.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/pinecone.py)
+- [`src/adapters/scheduler/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/scheduler/redis.py)
+- [`src/adapters/scheduler/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/scheduler/in_memory.py)
 
 ## Related
 
-- [Input Adapters](input.md) - Platform adapters
-- [Output Adapters](output.md) - Platform adapters
-- [Episodic Memory](../episodic-memory.md) - Memory system details
-- [Architecture](../architecture.md) - Overall system design
+- [Input Adapters](input.md)
+- [Output Adapters](output.md)
+- [Episodic Memory](../episodic-memory.md)
+- [Architecture](../architecture.md)

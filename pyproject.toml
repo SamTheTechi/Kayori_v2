@@ -4,8 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "apscheduler>=3.11.2",
-    "discord>=2.3.2",
+    "discord-ext-voice-recv>=0.4.2",
+    "discord.py[voice]>=2.3.2",
     "dotenv>=0.9.9",
+    "ffmpeg-python>=0.2.0",
     "fastapi>=0.116.1",
     "fastembed>=0.7.3",
     "geopy>=2.4.1",

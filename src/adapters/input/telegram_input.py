@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from dataclasses import dataclass, field
 
 from telegram import Update
 
 from src.adapters.runtime.telegram_runtime import TelegramRuntime, TelegramUpdateHandler
-from src.shared_types.models import MessageEnvelope, MessageSource
-from src.shared_types.protocol import MessageBus
+from src.shared_types.models import AudioPayload, MessageEnvelope, MessageSource
+from src.shared_types.protocol import InputAdapter, MessageBus
 
 
 @dataclass(slots=True)
-class TelegramInputAdapter:
+class TelegramInputAdapter(InputAdapter):
     runtime: TelegramRuntime
     bus: MessageBus
     allowed_chat_ids: set[str] | None = None
@@ -60,9 +61,9 @@ class TelegramInputAdapter:
             return
 
         content = ((message.text or message.caption) or "").strip()
-        # attachments = await self._extract_media_attachments(message)
-        # if not content and not attachments:
-        #     return
+        audio_payload = await self._extract_audio_payload(message)
+        if not content and audio_payload is None:
+            return
 
         user = message.from_user
         author_id = str(user.id) if user else None
@@ -75,15 +76,42 @@ class TelegramInputAdapter:
             author_id=author_id,
             target_user_id=chat_id if is_private else None,
             message_id=str(message.message_id) if message.message_id else None,
-            # attachments=attachments,
+            audio=audio_payload,
+            voice_mode=bool(audio_payload),
             metadata={
                 "author_username": user.username if user else None,
                 "author_display_name": user.full_name if user else "",
-                # "attachment_count": len(attachments),
-                # "attachment_kinds": sorted({item.kind for item in attachments}),
+                "transport": "telegram",
+                "telegram_has_audio": bool(audio_payload),
             },
         )
         await self.bus.publish(envelope)
+
+    async def _extract_audio_payload(self, message: object) -> AudioPayload | None:
+        voice = getattr(message, "voice", None)
+        if voice is not None:
+            audio_bytes = await self.runtime.download_file_bytes(voice.file_id)
+            if not audio_bytes:
+                return None
+            return AudioPayload(
+                base64_data=base64.b64encode(audio_bytes).decode("ascii"),
+                mime_type="audio/ogg",
+                filename="telegram_voice.ogg",
+                duration_seconds=float(voice.duration),
+            )
+
+        audio = getattr(message, "audio", None)
+        if audio is not None:
+            audio_bytes = await self.runtime.download_file_bytes(audio.file_id)
+            if not audio_bytes:
+                return None
+            return AudioPayload(
+                base64_data=base64.b64encode(audio_bytes).decode("ascii"),
+                mime_type=str(audio.mime_type or "audio/mpeg"),
+                filename=str(audio.file_name or "telegram_audio"),
+                duration_seconds=float(audio.duration) if audio.duration else None,
+            )
+        return None
 
     # async def _extract_media_attachments(
     #     self, message: Message
@@ -191,20 +219,20 @@ class TelegramInputAdapter:
     #     return attachments
     #
 
-# def _kind_from_mime(mime_type: str, filename: str | None) -> str:
-#     filename_text = str(filename or "").lower()
-#     if mime_type.startswith("image/"):
-#         return "image"
-#     if mime_type.startswith("audio/"):
-#         return "audio"
-#     if mime_type.startswith("video/"):
-#         return "video"
-#     if filename_text.endswith(
-#         (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic", ".heif")
-#     ):
-#         return "image"
-#     if filename_text.endswith((".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac")):
-#         return "audio"
-#     if filename_text.endswith((".mp4", ".mov", ".mkv", ".webm", ".avi")):
-#         return "video"
-#     return "document"
+    # def _kind_from_mime(mime_type: str, filename: str | None) -> str:
+    #     filename_text = str(filename or "").lower()
+    #     if mime_type.startswith("image/"):
+    #         return "image"
+    #     if mime_type.startswith("audio/"):
+    #         return "audio"
+    #     if mime_type.startswith("video/"):
+    #         return "video"
+    #     if filename_text.endswith(
+    #         (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".heic", ".heif")
+    #     ):
+    #         return "image"
+    #     if filename_text.endswith((".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac")):
+    #         return "audio"
+    #     if filename_text.endswith((".mp4", ".mov", ".mkv", ".webm", ".avi")):
+    #         return "video"
+    #     return "document"

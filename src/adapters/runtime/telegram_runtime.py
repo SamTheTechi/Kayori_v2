@@ -125,6 +125,15 @@ class TelegramRuntime:
             return file_path
         return f"https://api.telegram.org/file/bot{self.token}/{file_path}"
 
+    async def download_file_bytes(self, file_id: str) -> bytes | None:
+        if not file_id:
+            return None
+
+        telegram_file = await self._application.bot.get_file(file_id)
+        payload = await telegram_file.download_as_bytearray()
+        data = bytes(payload)
+        return data or None
+
     async def _on_update(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:

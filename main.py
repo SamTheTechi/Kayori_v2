@@ -18,13 +18,14 @@ from src.adapters.http.metrics import register_metrics_routes
 from src.adapters.http.ping import register_ping_routes
 from src.adapters.audio.tts import EdgeTtsAdapter
 from src.adapters.bus.redis_bus import RedisMessageBus
-from src.adapters.input.discord_input import DiscordInputAdapter
+from src.adapters.input.discord_input import DiscordInputAdapter, DiscordVoiceInputAdapter
 from src.adapters.input.telegram_input import TelegramInputAdapter
 from src.adapters.input.webhook_input import WebhookInputAdapter
 from src.adapters.output.discord_output import DiscordOutputAdapter
 from src.adapters.output.telegram_output import TelegramOutputAdapter
 from src.adapters.output.webhook_output import WebhookOutputAdapter
 from src.adapters.runtime.discord_runtime import DiscordRuntime
+from src.adapters.runtime.discord_voice_runtime import DiscordVoiceRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
 from src.adapters.state.redis import RedisStateStore
@@ -61,6 +62,8 @@ async def _main() -> None:
     # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_output_user_id = os.getenv("DISCORD_USER_ID", "")
+    discord_voice_channel_id = str(
+        os.getenv("DISCORD_VOICE_CHANNEL_ID", "")).strip() or None
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
     groq_api_key = str(os.getenv("API_KEY", "")).strip()
@@ -94,13 +97,23 @@ async def _main() -> None:
     )
 
     if primary_chat_app == "discord" and not discord_token.strip():
-        raise RuntimeError("DISCORD_BOT_TOKEN is required when PRIMARY_CHAT_APP=discord.")
+        raise RuntimeError(
+            "DISCORD_BOT_TOKEN is required when PRIMARY_CHAT_APP=discord.")
     if primary_chat_app == "telegram" and not telegram_token.strip():
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is required when PRIMARY_CHAT_APP=telegram.")
+        raise RuntimeError(
+            "TELEGRAM_BOT_TOKEN is required when PRIMARY_CHAT_APP=telegram.")
 
     discord_runtime = (
         DiscordRuntime(token=discord_token)
         if primary_chat_app == "discord"
+        else None
+    )
+    discord_voice_runtime = (
+        DiscordVoiceRuntime(
+            runtime=discord_runtime,
+            voice_channel_id=discord_voice_channel_id,
+        )
+        if discord_runtime is not None and discord_voice_channel_id
         else None
     )
     telegram_runtime = (
@@ -139,16 +152,17 @@ async def _main() -> None:
         api_key=tts_api_key,
         base_url=tts_base_url
     )
+    stt_adapter = WhisperSttAdapter(api_key=groq_api_key)
 
     # Output adapters.
     outputs = _build_outputs(
         primary_chat_app=primary_chat_app,
         discord_runtime=discord_runtime,
+        discord_voice_runtime=discord_voice_runtime,
         discord_output_user_id=discord_output_user_id,
         telegram_runtime=telegram_runtime,
         telegram_output_chat_id=telegram_output_chat_id,
         webhook_runtime=webhook_runtime,
-        webhook_tts=webhook_tts,
         webhook_output_targets=webhook_output_targets,
         webhook_output_token=webhook_output_token,
     )
@@ -202,6 +216,8 @@ async def _main() -> None:
         conversation_contraction=conversation_contraction,
         scheduler=scheduler,
         output=output_dispatcher,
+        stt=stt_adapter,
+        tts=webhook_tts,
     )
 
     # Input adapters.
@@ -209,9 +225,9 @@ async def _main() -> None:
         primary_chat_app=primary_chat_app,
         bus=bus,
         discord_runtime=discord_runtime,
+        discord_voice_runtime=discord_voice_runtime,
         telegram_runtime=telegram_runtime,
         webhook_runtime=webhook_runtime,
-        groq_api_key=groq_api_key,
     )
 
     for adapter in inputs:
@@ -286,11 +302,11 @@ def _build_outputs(
     *,
     primary_chat_app: PrimaryChatApp,
     discord_runtime: DiscordRuntime | None,
+    discord_voice_runtime: DiscordVoiceRuntime | None,
     discord_output_user_id: str,
     telegram_runtime: TelegramRuntime | None,
     telegram_output_chat_id: str,
     webhook_runtime: WebhookRuntime,
-    webhook_tts: EdgeTtsAdapter,
     webhook_output_targets: list[str],
     webhook_output_token: str | None,
 ) -> list[OutputAdapter]:
@@ -298,6 +314,7 @@ def _build_outputs(
         _build_primary_output(
             primary_chat_app=primary_chat_app,
             discord_runtime=discord_runtime,
+            discord_voice_runtime=discord_voice_runtime,
             discord_output_user_id=discord_output_user_id,
             telegram_runtime=telegram_runtime,
             telegram_output_chat_id=telegram_output_chat_id,
@@ -305,7 +322,6 @@ def _build_outputs(
         WebhookOutputAdapter(
             targets=webhook_output_targets,
             runtime=webhook_runtime,
-            tts=webhook_tts,
             bearer_token=webhook_output_token,
         ),
     ]
@@ -316,21 +332,21 @@ def _build_inputs(
     primary_chat_app: PrimaryChatApp,
     bus: MessageBus,
     discord_runtime: DiscordRuntime | None,
+    discord_voice_runtime: DiscordVoiceRuntime | None,
     telegram_runtime: TelegramRuntime | None,
     webhook_runtime: WebhookRuntime,
-    groq_api_key: str,
 ) -> list[InputAdapter]:
     return [
-        _build_primary_input(
+        *_build_primary_inputs(
             primary_chat_app=primary_chat_app,
             bus=bus,
             discord_runtime=discord_runtime,
+            discord_voice_runtime=discord_voice_runtime,
             telegram_runtime=telegram_runtime,
         ),
         WebhookInputAdapter(
             runtime=webhook_runtime,
             bus=bus,
-            stt=WhisperSttAdapter(api_key=groq_api_key),
         ),
     ]
 
@@ -339,15 +355,18 @@ def _build_primary_output(
     *,
     primary_chat_app: PrimaryChatApp,
     discord_runtime: DiscordRuntime | None,
+    discord_voice_runtime: DiscordVoiceRuntime | None,
     discord_output_user_id: str,
     telegram_runtime: TelegramRuntime | None,
     telegram_output_chat_id: str,
 ) -> OutputAdapter:
     if primary_chat_app == "discord":
         if discord_runtime is None:
-            raise RuntimeError("Discord runtime is required for Discord output.")
+            raise RuntimeError(
+                "Discord runtime is required for Discord output.")
         return DiscordOutputAdapter(
             runtime=discord_runtime,
+            voice_runtime=discord_voice_runtime,
             default_channel_id=None,
             default_user_id=discord_output_user_id,
         )
@@ -360,25 +379,35 @@ def _build_primary_output(
     )
 
 
-def _build_primary_input(
+def _build_primary_inputs(
     *,
     primary_chat_app: PrimaryChatApp,
     bus: MessageBus,
     discord_runtime: DiscordRuntime | None,
+    discord_voice_runtime: DiscordVoiceRuntime | None,
     telegram_runtime: TelegramRuntime | None,
-) -> InputAdapter:
+) -> list[InputAdapter]:
     if primary_chat_app == "discord":
         if discord_runtime is None:
-            raise RuntimeError("Discord runtime is required for Discord input.")
-        return DiscordInputAdapter(runtime=discord_runtime, bus=bus)
+            raise RuntimeError(
+                "Discord runtime is required for Discord input.")
+        inputs: list[InputAdapter] = [
+            DiscordInputAdapter(runtime=discord_runtime, bus=bus)
+        ]
+        if discord_voice_runtime is not None:
+            inputs.append(DiscordVoiceInputAdapter(
+                runtime=discord_voice_runtime, bus=bus))
+        return inputs
 
     if telegram_runtime is None:
         raise RuntimeError("Telegram runtime is required for Telegram input.")
-    return TelegramInputAdapter(
-        runtime=telegram_runtime,
-        bus=bus,
-        allowed_chat_ids=None,
-    )
+    return [
+        TelegramInputAdapter(
+            runtime=telegram_runtime,
+            bus=bus,
+            allowed_chat_ids=None,
+        )
+    ]
 
 
 def _resolve_primary_chat_app() -> PrimaryChatApp:
@@ -393,7 +422,8 @@ def _resolve_primary_chat_app() -> PrimaryChatApp:
 def _resolve_output_sink_mode() -> Literal["direct", "multi"]:
     value = str(os.getenv("OUTPUT_SINK_MODE", "direct")).strip().lower()
     if value not in {"direct", "multi"}:
-        raise RuntimeError("OUTPUT_SINK_MODE must be either 'direct' or 'multi'.")
+        raise RuntimeError(
+            "OUTPUT_SINK_MODE must be either 'direct' or 'multi'.")
     return value  # type: ignore[return-value]
 
 

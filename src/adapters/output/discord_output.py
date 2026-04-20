@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, replace
 
+import discord
+
 from src.adapters.runtime.discord_runtime import DiscordRuntime
+from src.adapters.runtime.discord_voice_runtime import DiscordVoiceRuntime
 from src.logger import get_logger
 from src.shared_types.models import MessageSource, OutboundMessage
+from src.shared_types.protocol import OutputAdapter
 
 logger = get_logger("output.discord")
 
 
 @dataclass(slots=True)
-class DiscordOutputAdapter:
+class DiscordOutputAdapter(OutputAdapter):
     runtime: DiscordRuntime
+    voice_runtime: DiscordVoiceRuntime | None = None
     default_channel_id: str | None = None
     default_user_id: str | None = None
 
@@ -35,6 +41,11 @@ class DiscordOutputAdapter:
     async def send(self, message: OutboundMessage) -> None:
         await self.start()
 
+        if _is_voice_route(message):
+            played = await self._send_voice_reply(message)
+            if played or message.voice_mode:
+                return
+
         route = _resolve_route(
             message=message,
             default_channel_id=self.default_channel_id,
@@ -52,20 +63,21 @@ class DiscordOutputAdapter:
             )
             return
 
-        chunks = _split_discord_chunks(
-            message.content, max_len=self.max_chunk_len)
+        if message.audio is not None:
+            await self._send_audio(message=message, route=route)
+
+        text = str(message.content or "").strip()
+        chunks = _split_discord_chunks(text, max_len=self.max_chunk_len)
         if not chunks:
-            await self._send_one(message=message, route=route)
             return
 
-        first = True
+        first = message.audio is None
         for chunk in chunks:
             chunk_message = replace(
                 message,
                 content=chunk,
                 reply_to_message_id=message.reply_to_message_id if first else None,
                 mention_author=message.mention_author if first else False,
-                # attachments=message.attachments if first else [],
             )
             await self._send_one(message=chunk_message, route=route)
             first = False
@@ -73,13 +85,11 @@ class DiscordOutputAdapter:
     async def _send_one(
         self, *, message: OutboundMessage, route: tuple[str, str]
     ) -> None:
-        mode, target_id = route
-        # content = _compose_text_with_media(
-        #     message.content, message.attachments)
         content = message.content.strip()
         if not (content or "").strip():
             return
 
+        mode, target_id = route
         client = self.runtime.client
 
         if mode == "dm":
@@ -107,6 +117,56 @@ class DiscordOutputAdapter:
                 pass
 
         await channel.send(content)
+
+    async def _send_audio(
+        self, *, message: OutboundMessage, route: tuple[str, str]
+    ) -> None:
+        audio_bytes = message.audio_bytes()
+        if not audio_bytes:
+            return
+
+        payload = io.BytesIO(audio_bytes)
+        payload.name = (
+            message.audio.filename if message.audio else None) or "reply.audio"
+        file = discord.File(payload, filename=payload.name)
+        mode, target_id = route
+        client = self.runtime.client
+        if mode == "dm":
+            user = await client.fetch_user(int(target_id))
+            await user.send(file=file)
+            return
+
+        channel = await client.fetch_channel(int(target_id))
+        await channel.send(file=file)
+
+    async def _send_voice_reply(self, message: OutboundMessage) -> bool:
+        voice_runtime = self.voice_runtime
+        if voice_runtime is None:
+            return False
+        audio_bytes = message.audio_bytes()
+        if not audio_bytes:
+            return False
+        voice_channel_id = str(
+            message.metadata.get("voice_channel_id")
+            or message.metadata.get("discord_voice_channel_id")
+            or message.channel_id
+            or voice_runtime.voice_channel_id
+            or ""
+        ).strip() or None
+        await logger.info(
+            "discord_vc_reply_routed",
+            "Routing outbound Discord VC reply to voice playback.",
+            context={
+                "voice_channel_id": voice_channel_id,
+                "mime_type": message.audio.mime_type if message.audio else None,
+                "size_bytes": len(audio_bytes),
+            },
+        )
+        return await voice_runtime.play_reply(
+            audio_bytes=audio_bytes,
+            mime_type=message.audio.mime_type if message.audio else None,
+            voice_channel_id=voice_channel_id,
+        )
 
 
 def _resolve_route(
@@ -162,12 +222,8 @@ def _split_discord_chunks(content: str, max_len: int = 1900) -> list[str]:
     return chunks
 
 
-# def _compose_text_with_media(content: str, attachments: list[MessageAttachment]) -> str:
-#     if not attachments:
-#         return content
-#     lines = [content.strip()] if content.strip() else []
-#     lines.append("Media:")
-#     for item in attachments[:4]:
-#         detail = item.url or item.filename or "[embedded]"
-#         lines.append(f"- {item.kind}: {detail}")
-#     return "\n".join(lines)
+def _is_voice_route(message: OutboundMessage) -> bool:
+    metadata = message.metadata or {}
+    transport = str(metadata.get("transport") or "").strip().lower()
+    session_kind = str(metadata.get("session_kind") or "").strip().lower()
+    return transport == "discord_vc" or session_kind == "voice_call"

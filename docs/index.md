@@ -6,12 +6,13 @@ An intelligent, multi-platform AI companion with emotional awareness and long-te
 
 Kayori is a conversational AI agent that:
 
-- 💬 **Converses naturally** across Discord, Telegram, and webhooks
-- 🧠 **Remembers conversations** via vector-based episodic memory
-- 💖 **Tracks emotions** across 10 mood dimensions
-- 🎵 **Controls Spotify**, sets reminders, searches the web
-- ⏰ **Acts proactively** with scheduled background tasks
-- 🎙️ **Supports voice** via Whisper STT and EdgeTTS
+-**Converses naturally** across Discord, Telegram and endpoint
+-**Remembers** you via vector-based episodic memory with automatic fact extraction and compaction
+-**Feels emotionally** real with 10 mood dimensions which builds trust/attachment over time
+-**Has her own life** journals thoughts and feelings in the background, shaped by her personality, memories, and your conversations
+-**Controls your world** Spotify, reminders, Google Calendar, and web search
+-**Acts proactively** with custome scheduled background tasks
+-**Supports voice** via Whisper STT and EdgeTTS
 
 ## Quick Start
 
@@ -86,10 +87,10 @@ Emotions influence responses and evolve over time.
 ## Architecture at a Glance
 
 ```
-Input → Message Bus → Orchestrator → Agent → Output
-(Discord)   (Redis)   (Coordinator) (LLM)  (Discord)
-(Telegram)                       (Tools)   (Telegram)
-(Webhook)                                  (Webhook)
+ Input -→  Message Bus -→  Orchestrator -→  Agent -→  Output
+(Discord)   (Redis)        (Coordinator)    (LLM)  (Discord)
+(Telegram)                                 (Tools) (Telegram)
+(Webhook)                                           (Webhook)
 ```
 
 Read the full [Architecture](architecture.md) doc for details.
@@ -100,7 +101,6 @@ Read the full [Architecture](architecture.md) doc for details.
 
 - **Python 3.13** with async/await
 - **LangGraph** for agent orchestration
-- **Redis** for state, memory, scheduling
 - **Groq** for LLM inference
 - **FastAPI** for webhook runtime
 

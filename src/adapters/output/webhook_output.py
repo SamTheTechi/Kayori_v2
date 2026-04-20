@@ -1,29 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
 
-from src.adapters.audio import EdgeTtsAdapter
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
 from src.adapters.webhook_common import (
     webhook_envelope_id,
-    webhook_kind,
 )
 from src.logger import get_logger
 from src.shared_types.models import OutboundMessage, MessageSource
+from src.shared_types.protocol import OutputAdapter
 
 logger = get_logger("output.webhook")
 
 
 @dataclass(slots=True)
-class WebhookOutputAdapter:
+class WebhookOutputAdapter(OutputAdapter):
     targets: list[str]
     runtime: WebhookRuntime | None = None
-    tts: EdgeTtsAdapter | None = None
     bearer_token: str | None = None
     timeout_seconds: float = 10.0
     name: str = "webhook"
@@ -51,30 +47,18 @@ class WebhookOutputAdapter:
             payload = {
                 "reply": str(message.content or "").strip(),
                 "envelope_id": response_id,
+                "voice_mode": bool(message.voice_mode),
             }
-            if payload["reply"] and webhook_kind(metadata) == "audio":
-                tts = self.tts
-                if tts is None:
-                    runtime.fail_response(
-                        response_id,
-                        "Webhook audio response requested without TTS adapter.",
-                    )
-                    raise RuntimeError(
-                        "Webhook audio response requested without TTS adapter."
-                    )
-                synthesis = await tts.synthesize(
-                    text=payload["reply"],
-                    voice=_optional_text(metadata.get("tts_voice")),
-                    response_format=_optional_text(metadata.get("tts_response_format")),
-                    speed=_optional_float(metadata.get("tts_speed")),
-                )
-                payload["audio_base64"] = base64.b64encode(
-                    synthesis.audio_bytes
-                ).decode("ascii")
-                payload["audio_content_type"] = synthesis.content_type
+            if message.audio is not None:
+                payload["audio_base64"] = message.audio.base64_data
+                payload["audio_content_type"] = message.audio.mime_type or "audio/mpeg"
+                payload["audio_filename"] = message.audio.filename
+                payload["audio_duration_seconds"] = message.audio.duration_seconds
             runtime.resolve_response(response_id, payload)
 
-        if not str(message.content or "").strip() or not self.targets:
+        has_text = bool(str(message.content or "").strip())
+        has_audio = message.audio is not None
+        if (not has_text and not has_audio) or not self.targets:
             return
 
         await self.start()
@@ -107,17 +91,3 @@ class WebhookOutputAdapter:
                     "Webhook target returned an error.",
                     context={"target_url": url, "status_code": result.status_code},
                 )
-
-
-def _optional_text(value: Any) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
-def _optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None

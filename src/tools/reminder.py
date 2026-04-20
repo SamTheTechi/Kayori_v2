@@ -67,7 +67,6 @@ class ReminderTool(BaseTool):
                     content=reminder_text,
                     channel_id=route["channel_id"],
                     target_user_id=route["target_user_id"],
-                    created_at=datetime.now(UTC).isoformat(),
                     metadata={
                         "kind": "reminder_delivery",
                         "origin_source": MessageSource.REMINDER.value,

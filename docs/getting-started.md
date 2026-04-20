@@ -4,12 +4,10 @@ Get Kayori v2 running in under 5 minutes.
 
 ## Prerequisites
 
-- **Python 3.13** (strict requirement, 3.14 may work)
+- **Python 3.13**
 - **uv** package manager (or pip)
-- **Redis** server (required for production)
 - **Groq API key** (for LLM)
 - **Primary chat token** (Discord or Telegram)
-- **Webhook bearer token**
 
 ## Quick Start
 
@@ -22,10 +20,6 @@ cd kayori_v2
 
 # Install with uv (recommended)
 uv sync
-
-# Or with pip
-pip install -e .
-```
 
 ### 2. Configure Environment
 
@@ -42,7 +36,6 @@ API_KEY=your_groq_api_key
 PRIMARY_CHAT_APP=discord
 DISCORD_BOT_TOKEN=your_discord_token
 DISCORD_USER_ID=your_user_id
-WEBHOOK_BEARER_TOKEN=your_webhook_token
 ```
 
 **Minimum setup (Telegram):**
@@ -51,13 +44,13 @@ API_KEY=your_groq_api_key
 PRIMARY_CHAT_APP=telegram
 TELEGRAM_BOT_TOKEN=your_telegram_token
 TELEGRAM_CHAT_ID=your_chat_id
-WEBHOOK_BEARER_TOKEN=your_webhook_token
 ```
 
 **Optional features:**
 ```env
 # Tools
 TAVILY_API_KEY=
+
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 SPOTIFY_REDIRECT_URI=
@@ -106,29 +99,11 @@ You should see connection logs. Send a message to your selected primary chat bot
 
 ---
 
-## What Happens When You Run Kayori
-
-```
-1. Load .env configuration
-2. Connect to Redis
-3. Initialize the selected primary chat platform plus webhook
-4. Create agents (Chat + Life)
-5. Start scheduler for proactive behavior
-6. Begin listening for messages
-```
-
----
-
 ## Verification
 
-**Check logs for:**
-- ✅ Redis connection established
-- ✅ Primary chat bot logged in
-- ✅ Scheduler started
-- ✅ Input adapters running
+**Check logs for:** in logs/app.json
 
-**Test it:**
-Send a message to your bot. It should respond within a few seconds.
+**Test it:** Send a message to your bot. It should respond within a few seconds.
 
 ---
 

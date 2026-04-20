@@ -5,47 +5,30 @@ Routes outbound messages to the right platforms.
 ## What It Does
 
 The output sink is the shared outbound dispatcher:
-- 📨 Selects which adapters receive each message
-- 🚀 Sends to one or many outputs concurrently
-- 🛡️ Isolates failures (one platform down ≠ all down)
-- 🔄 Manages adapter lifecycle (start/stop)
+- Selects which adapters receive each message
+- Sends to the selected outputs concurrently
+- Isolates failures (one platform down does not affect all outputs)
+- Manages adapter lifecycle (start/stop)
 
-## Two Routing Modes
+## Routing
 
-### Direct Mode (Default)
-
-Routes back to **same platform** message came from:
-
-```
-Discord message → Discord response
-Telegram message → Telegram response
-```
+In the current runtime, outbound chat messages are routed back through the output adapter for the active chat platform. Selection is source-based.
 
 ```python
 sink = OutputSink(outputs=outputs, mode="direct")
 ```
 
-**How it works:**
-- Matches `message.source` to adapter's `route_source`
-- Discord source → Discord output adapter only
-- Keeps responses on originating platform
-
-### Multi Mode
-
-**Broadcasts** to all configured outputs:
+Example:
 
 ```
-One message → Discord + Telegram + Webhook
+source=DISCORD  -> Discord output adapter
+source=TELEGRAM -> Telegram output adapter
 ```
 
-```python
-sink = OutputSink(outputs=outputs, mode="multi")
-```
-
-**Use cases:**
-- Testing multiple platforms
-- Mirroring conversations
-- Debugging adapters
+The selection logic is source-based:
+- `DISCORD` messages go to the Discord output adapter
+- `TELEGRAM` messages go to the Telegram output adapter
+- `multi` mode still exists in the sink type, but normal runtime routing uses `direct`
 
 ## How It Works
 
@@ -57,7 +40,7 @@ sink = OutputSink(outputs=outputs, mode="multi")
 3. Sink selects target adapters
 4. Sends to all concurrently (asyncio.gather)
 5. Logs failures per adapter
-6. Returns (doesn't crash on failures)
+6. Returns without raising adapter send failures
 ```
 
 ### Selection Logic
@@ -65,9 +48,8 @@ sink = OutputSink(outputs=outputs, mode="multi")
 ```python
 def _select_outputs(message):
     if mode == "multi":
-        return all_outputs  # Broadcast
-    
-    # Direct mode: match source
+        return list(outputs)
+
     return [
         output for output in outputs
         if output.route_source == message.source
@@ -82,13 +64,15 @@ def _select_outputs(message):
 
 ```python
 OutboundMessage(
-    source=MessageSource.DISCORD,       # Original source
-    content="Here's your answer!",       # Response text
-    channel_id="channel456",             # Where to send
-    target_user_id="user123",            # Who to reply to
-    reply_to_message_id="msg789",        # Thread reply (optional)
-    mention_author=True,                 # @mention user (optional)
-    metadata={...}                       # Extra data
+    source=MessageSource.DISCORD,
+    content="Here's your answer!",
+    channel_id="channel456",
+    target_user_id="user123",
+    reply_to_message_id="msg789",
+    mention_author=True,
+    voice_mode=False,
+    metadata={...},
+    audio=None,
 )
 ```
 
@@ -112,8 +96,7 @@ await sink.stop()
 Uses `asyncio.gather(return_exceptions=True)`:
 - All adapters send concurrently
 - Failures caught and logged
-- One adapter failing doesn't stop others
-- System continues if Discord down, Telegram works
+- One adapter failing does not abort the rest of the send operation
 
 **Logging:**
 ```python
@@ -134,7 +117,10 @@ outbound = OutboundMessage(
     content=reply_text,
     channel_id=envelope.channel_id,
     target_user_id=envelope.target_user_id,
-    reply_to_message_id=envelope.message_id
+    voice_mode=bool(envelope.voice_mode),
+    metadata=...,
+    reply_to_message_id=envelope.message_id,
+    mention_author=bool(envelope.channel_id and not envelope.target_user_id),
 )
 
 # Send via sink
@@ -146,64 +132,6 @@ Tools also use the sink:
 # ReminderTool sends reminders through sink
 await self._output.send(reminder_message)
 ```
-
-## Pros and Cons
-
-### ✅ Strengths
-
-**Simple Abstraction**
-- One interface for all outputs
-- Orchestrator doesn't know adapters
-- Clean separation
-
-**Flexible Routing**
-- Direct mode for normal use
-- Multi mode for testing/broadcast
-- Easy to switch
-
-**Failure Isolation**
-- Concurrent sends
-- Per-adapter error catching
-- No cascade failures
-
-**Lifecycle Management**
-- Ordered start/stop
-- Reverse teardown
-- Graceful shutdown
-
-**Visibility**
-- Dropped messages logged
-- Failures logged per adapter
-- Easy to debug
-
-### ❌ Limitations
-
-**Simple Routing**
-- Only matches source
-- No complex rules
-- No priority/fallback
-
-**No Transformation**
-- Adapters receive raw message
-- No auto-formatting
-- Platform-specific handling manual
-
-**No Retries**
-- Failed sends just logged
-- No retry logic
-- No dead letter queue
-
-**Assumes Compatibility**
-- All outputs accept same shape
-- No capability checking
-- May fail on platform limits
-
-**Synchronous Within Async**
-- Each adapter's send() blocks
-- Slow adapter delays completion
-- No per-adapter timeout
-
----
 
 ## File Reference
 

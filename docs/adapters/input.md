@@ -1,328 +1,149 @@
 # Input Adapters
 
-Input adapters listen to external platforms and publish messages to Kayori's message bus.
+Input adapters listen to external sources and publish `MessageEnvelope` objects to the message bus.
 
 ## Available Input Adapters
 
-| Adapter | Platform | Use Case |
-|---------|----------|----------|
-| DiscordInputAdapter | Discord | Chat bots in Discord servers |
-| TelegramInputAdapter | Telegram | Chat bots in Telegram groups/DMs |
-| WebhookInputAdapter | HTTP REST | Custom integrations, voice (STT) |
-| ConsoleInputGateway | CLI | Testing, local development |
-
----
+| Adapter | Source | Notes |
+|---------|--------|-------|
+| `DiscordInputAdapter` | Discord text messages | Uses `DiscordRuntime` |
+| `DiscordVoiceInputAdapter` | Discord voice utterances | Uses `DiscordVoiceRuntime` and publishes audio envelopes |
+| `TelegramInputAdapter` | Telegram updates | Supports text and audio |
+| `WebhookInputAdapter` | HTTP routes on `WebhookRuntime` | Handles text and uploaded audio |
+| `ConsoleInputGateway` | stdin | Local testing path |
 
 ## How Input Adapters Work
 
-### General Flow
+General flow:
 
+```text
+Platform Event -> Input Adapter -> MessageEnvelope -> MessageBus
 ```
-Platform Event → Input Adapter → MessageEnvelope → Message Bus → Orchestrator
-```
 
-### MessageEnvelope Structure
+Every adapter publishes a `MessageEnvelope` with the normalized source, routing fields, and any platform metadata that the runtime needs later.
 
-Every input adapter creates a `MessageEnvelope`:
+## MessageEnvelope Structure
 
 ```python
 MessageEnvelope(
-    source=MessageSource.DISCORD,     # Where message came from
-    content="Hello bot!",              # Actual text content
-    author_id="user123",               # Who sent it
-    channel_id="channel456",           # Which channel/chat
-    target_user_id="bot789",           # Who it's for (optional)
-    metadata={...}                     # Extra platform-specific data
+    source=MessageSource.DISCORD,
+    content="Hello bot!",
+    channel_id="channel456",
+    author_id="user123",
+    message_id="msg789",
+    target_user_id=None,
+    audio=None,
+    voice_mode=False,
+    metadata={...},
 )
 ```
-
----
 
 ## DiscordInputAdapter
 
-### What It Does
+`DiscordInputAdapter` registers a message handler on `DiscordRuntime`, acquires the runtime, and publishes one envelope per incoming Discord text message.
 
-Listens to Discord messages and publishes them to the bus.
+Current envelope behavior:
+- `source=MessageSource.DISCORD`
+- DMs are routed with `target_user_id`
+- guild channels are routed with `channel_id`
+- metadata currently includes `author_display_name`
 
-### Setup
+## DiscordVoiceInputAdapter
 
-```python
-discord_runtime = DiscordRuntime(token=discord_token)
-discord_input = DiscordInputAdapter(
-    runtime=discord_runtime,
-    bus=bus
-)
-```
+`DiscordVoiceInputAdapter` registers a voice handler on `DiscordVoiceRuntime` and publishes audio-first envelopes.
 
-### Features
+Current envelope behavior:
+- `source=MessageSource.DISCORD`
+- `content=None`
+- `audio` is populated from captured WAV bytes
+- `voice_mode=True`
+- metadata includes `transport="discord_vc"`, guild/channel/speaker fields, and `session_kind="voice_call"`
 
-- Listens to Discord message events
-- Filters by user/channel (configurable)
-- Handles Discord-specific metadata
-- Integrates with Discord runtime lifecycle
-
-### Pros
-✅ Native Discord integration  
-✅ Rich metadata (user roles, channels)  
-✅ Supports attachments, embeds  
-
-### Cons
-❌ Requires Discord bot token  
-❌ Message Content intent needed  
-❌ Discord.py dependency  
-
----
+Speech-to-text is not performed inside the adapter. The orchestrator normalizes audio envelopes later through the configured STT adapter.
 
 ## TelegramInputAdapter
 
-### What It Does
+`TelegramInputAdapter` registers an update handler on `TelegramRuntime`, optionally filters by `allowed_chat_ids`, and publishes envelopes for text, caption, voice, or audio messages.
 
-Listens to Telegram messages and publishes them to the bus.
-
-### Setup
-
-```python
-telegram_runtime = TelegramRuntime(token=telegram_token)
-telegram_input = TelegramInputAdapter(
-    runtime=telegram_runtime,
-    bus=bus,
-    allowed_chat_ids=None  # None = all chats
-)
-```
-
-### Features
-
-- Listens to Telegram message updates
-- Optional chat ID filtering
-- Handles Telegram-specific metadata
-- Supports groups and direct messages
-
-### Pros
-✅ Native Telegram integration  
-✅ Works in groups and DMs  
-✅ Supports Telegram-specific features  
-
-### Cons
-❌ Requires Telegram bot token  
-❌ Privacy mode limitations  
-❌ python-telegram-bot dependency  
-
----
+Current behavior:
+- private chats use `target_user_id`
+- group chats use `channel_id`
+- audio attachments are downloaded through the runtime and stored in `audio`
+- `voice_mode` is set when an audio payload exists
 
 ## WebhookInputAdapter
 
-### What It Does
+`WebhookInputAdapter` registers HTTP routes on `WebhookRuntime`:
+- `POST /webhooks/text`
+- `POST /webhooks/audio`
 
-Exposes HTTP endpoints for custom integrations. Includes speech-to-text support.
+Current behavior:
+- `/webhooks/text` accepts JSON and returns the matching webhook response payload
+- `/webhooks/audio` accepts multipart form data with uploaded audio
+- both routes publish `MessageEnvelope` objects and wait on the runtime’s pending response registry
+- bearer authentication is enforced by the runtime route wrapper
 
-### Setup
-
-```python
-webhook_runtime = WebhookRuntime(
-    host="0.0.0.0",
-    port=8080,
-    bearer_token="123"
-)
-webhook_input = WebhookInputAdapter(
-    runtime=webhook_runtime,
-    bus=bus,
-    stt=WhisperSttAdapter(api_key=groq_api_key)
-)
-```
-
-### Features
-
-- REST API endpoint (`POST /webhook`)
-- Bearer token authentication
-- Audio file transcription via Whisper STT
-- Custom route registration
-- Integrates with FastAPI server
-
-### Endpoints
-
-- `POST /webhook` - Receive messages
-- Audio files automatically transcribed
-- JSON payload expected
-
-### Pros
-✅ Platform agnostic  
-✅ Custom integrations possible  
-✅ Audio/voice support  
-✅ Easy to test with curl/Postman  
-
-### Cons
-❌ Requires HTTP server setup  
-❌ Authentication is simple bearer token  
-❌ No built-in rate limiting  
-
----
+The adapter does not run STT itself. It stores uploaded audio and passes language, prompt, and TTS-related fields through envelope metadata.
 
 ## ConsoleInputGateway
 
-### What It Does
+`ConsoleInputGateway` reads stdin asynchronously, wraps each entered line in a console envelope, and publishes it to the bus.
 
-Reads from stdin for local testing and development.
-
-### Setup
-
-```python
-console_input = ConsoleInputGateway(bus=bus)
-```
-
-### Features
-
-- Simple CLI input
-- No external dependencies
-- Great for testing core logic
-- Blocks on stdin
-
-### Pros
-✅ Zero configuration  
-✅ No API keys needed  
-✅ Perfect for development  
-✅ Instant feedback loop  
-
-### Cons
-❌ Not for production  
-❌ Single user only  
-❌ No platform features  
-
----
+Current behavior:
+- uses `channel_id="console"` and `author_id="local-user"` by default
+- exits on `exit` or `quit`
+- sets `metadata={"transport": "stdin"}`
 
 ## Creating a Custom Input Adapter
 
-### Step 1: Implement Protocol
-
 ```python
-from src.shared_types.protocol import InputAdapter, MessageBus
+from src.shared_types.protocol import MessageBus
 from src.shared_types.models import MessageEnvelope, MessageSource
 
-class MyPlatformInput(InputAdapter):
-    name = "my_platform"
-    
-    def __init__(self, runtime, bus: MessageBus):
-        self.runtime = runtime
+class MyPlatformInput:
+    name = "my-platform"
+
+    def __init__(self, bus: MessageBus):
         self.bus = bus
-        self._running = False
-    
-    async def start(self):
-        self._running = True
-        # Start listening to platform
-        await self._listen()
-    
-    async def stop(self):
-        self._running = False
-    
-    async def _listen(self):
-        while self._running:
-            message = await self._receive_message()
-            envelope = MessageEnvelope(
-                source=MessageSource.WEBHOOK,  # or custom
-                content=message.text,
-                author_id=message.user_id,
-                channel_id=message.channel_id,
-                metadata={"platform": "my_platform"}
+
+    async def start(self) -> None:
+        ...
+
+    async def stop(self) -> None:
+        ...
+
+    async def publish_event(self, text: str) -> None:
+        await self.bus.publish(
+            MessageEnvelope(
+                source=MessageSource.WEBHOOK,
+                content=text,
             )
-            await self.bus.publish(envelope)
+        )
 ```
 
-### Step 2: Wire in main.py
-
-```python
-from src.adapters.input.my_platform import MyPlatformInput
-
-inputs.append(MyPlatformInput(runtime=my_runtime, bus=bus))
-```
-
----
-
-## Input Adapter Pros and Cons (Overall)
-
-### ✅ Strengths
-
-**Platform Independence**
-- Core logic never knows about Discord/Telegram
-- Easy to add new platforms
-- Test with console input
-
-**Uniform Message Format**
-- All platforms become `MessageEnvelope`
-- Orchestrator handles one message type
-- Metadata preserved but not required
-
-**Lifecycle Management**
-- Clean start/stop methods
-- Runtime handles platform initialization
-- Graceful shutdown support
-
-**Async-First Design**
-- Non-blocking message publishing
-- Multiple inputs run concurrently
-- No platform blocks others
-
-### ❌ Limitations
-
-**Platform SDK Dependencies**
-- Each adapter pulls in heavy SDKs
-- Larger Docker image
-- More security surface area
-
-**Metadata Inconsistency**
-- Different platforms have different metadata
-- No validation of metadata schema
-- Hard to write platform-agnostic code
-
-**No Message Validation**
-- Empty content accepted
-- No spam filtering
-- No rate limiting at adapter level
-
-**Error Handling Variance**
-- Each adapter handles errors differently
-- No standardized retry logic
-- Platform-specific failure modes
-
----
+Register the adapter in the input builder path in `main.py`.
 
 ## Configuration
 
-All input adapters configured via environment variables:
+Current runtime wiring is driven from `main.py` and environment variables such as:
 
 ```env
-# Discord
-DISCORD_BOT_TOKEN=your_token
-DISCORD_USER_ID=your_user_id
-
-# Telegram
-TELEGRAM_BOT_TOKEN=your_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# Webhook
-WEBHOOK_BEARER_TOKEN=123
+PRIMARY_CHAT_APP=discord
+DISCORD_BOT_TOKEN=
+TELEGRAM_BOT_TOKEN=
+WEBHOOK_BEARER_TOKEN=
 WEBHOOK_SERVER_PORT=8080
 ```
 
-Enabled in `main.py`:
+## File References
 
-```python
-PRIMARY_CHAT_APP = "discord"  # or "telegram"
-# Webhook input is always enabled alongside the primary chat app.
-```
-
----
-
-## Key Takeaways
-
-1. **One protocol, many platforms**: All inputs implement `InputAdapter`
-2. **MessageEnvelope is universal**: Core logic sees one message type
-3. **Runtime manages lifecycle**: Platform login, connection handling
-4. **Bus decouples input from processing**: Adapter publishes, orchestrator consumes
-5. **Easy to extend**: New platform = implement protocol + wire in
-
----
+- [`src/adapters/input/discord_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/discord_input.py)
+- [`src/adapters/input/telegram_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/telegram_input.py)
+- [`src/adapters/input/webhook_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/webhook_input.py)
+- [`src/adapters/input/console_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/console_input.py)
 
 ## Related
 
-- [Output Adapters](output.md) - Sending responses back
-- [Message Bus](backends.md) - How messages flow
-- [Architecture](../architecture.md) - Overall system design
+- [Output Adapters](output.md)
+- [Backend Adapters](backends.md)
+- [Architecture](../architecture.md)

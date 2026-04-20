@@ -1,4 +1,5 @@
 from src.adapters.runtime.discord_runtime import DiscordRuntime
+from src.adapters.runtime.discord_voice_runtime import DiscordVoiceRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 
 try:
@@ -6,4 +7,4 @@ try:
 except ModuleNotFoundError:
     WebhookRuntime = None
 
-__all__ = ["DiscordRuntime", "TelegramRuntime", "WebhookRuntime"]
+__all__ = ["DiscordRuntime", "DiscordVoiceRuntime", "TelegramRuntime", "WebhookRuntime"]

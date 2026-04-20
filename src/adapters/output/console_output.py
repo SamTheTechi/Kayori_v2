@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.shared_types.models import OutboundMessage, MessageSource
+from src.shared_types.protocol import OutputAdapter
 
 
 @dataclass(slots=True)
-class ConsoleOutputAdapter:
+class ConsoleOutputAdapter(OutputAdapter):
     name: str = "console"
     route_source: MessageSource = MessageSource.CONSOLE
 
@@ -24,11 +25,4 @@ class ConsoleOutputAdapter:
             kind = "CHANNEL"
         else:
             kind = "UNKNOWN"
-        extra = ""
-        if message.attachments:
-            media = ", ".join(
-                f"{item.kind}:{item.url or item.filename or '[embedded]'}"
-                for item in message.attachments[:4]
-            )
-            extra = f" | media={media}"
-        print(f"[console][{kind}][{target}] {message.content}{extra}")
+        print(f"[console][{kind}][{target}] {message.content}")
