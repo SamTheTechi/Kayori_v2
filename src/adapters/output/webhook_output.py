@@ -73,7 +73,8 @@ class WebhookOutputAdapter(OutputAdapter):
 
         payload = message.to_dict()
         results = await asyncio.gather(
-            *(client.post(url, json=payload, headers=headers) for url in self.targets),
+            *(client.post(url, json=payload, headers=headers)
+              for url in self.targets),
             return_exceptions=True,
         )
         for url, result in zip(self.targets, results, strict=False):
@@ -89,5 +90,6 @@ class WebhookOutputAdapter(OutputAdapter):
                 await logger.warning(
                     "webhook_target_error",
                     "Webhook target returned an error.",
-                    context={"target_url": url, "status_code": result.status_code},
+                    context={"target_url": url,
+                             "status_code": result.status_code},
                 )

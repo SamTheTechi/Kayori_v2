@@ -38,17 +38,23 @@ async function fetchJson(path) {
 
 function renderMood(data) {
   const mood = data && data.mood ? data.mood : {};
-  const entries = Object.entries(mood).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const entries = Object.entries(mood).sort(
+    (a, b) => Number(b[1]) - Number(a[1]),
+  );
   if (!entries.length) {
     moodNode.innerHTML = '<div class="empty">No mood data.</div>';
     return;
   }
-  moodNode.innerHTML = `<div class="kv">${entries.map(([key, value]) => `
+  moodNode.innerHTML = `<div class="kv">${entries
+    .map(
+      ([key, value]) => `
     <div class="kv-row">
       <span>${escapeHtml(key)}</span>
       <span class="mono">${Number(value).toFixed(3)}</span>
     </div>
-  `).join("")}</div>`;
+  `,
+    )
+    .join("")}</div>`;
 }
 
 function renderLifeNotes(data) {
@@ -57,24 +63,38 @@ function renderLifeNotes(data) {
     lifeNotesNode.innerHTML = '<div class="empty">No life notes.</div>';
     return;
   }
-  lifeNotesNode.innerHTML = `<ul class="notes">${notes.slice().reverse().map((note) => `
+  lifeNotesNode.innerHTML = `<ul class="notes">${notes
+    .slice()
+    .reverse()
+    .map(
+      (note) => `
     <li>
       <div class="note-body">${escapeHtml(note.content || "")}</div>
       <div class="note-time muted mono">${escapeHtml(note.timestamp || "")}</div>
     </li>
-  `).join("")}</ul>`;
+  `,
+    )
+    .join("")}</ul>`;
 }
 
 function renderHistory(data) {
-  const count = Number(data && data.count || 0);
-  const messages = (((data || {}).history || {}).messages || []);
-  const preview = messages.slice(-3).map(formatHistoryMessage).filter(Boolean).join("\n\n");
-  setHtmlPreserveScroll(historyNode, `
+  const count = Number((data && data.count) || 0);
+  const messages = ((data || {}).history || {}).messages || [];
+  const preview = messages
+    .slice(-3)
+    .map(formatHistoryMessage)
+    .filter(Boolean)
+    .join("\n\n");
+  setHtmlPreserveScroll(
+    historyNode,
+    `
     <div class="kv">
       <div class="kv-row"><span>Messages</span><span class="mono">${count}</span></div>
     </div>
     <div class="history-preview">${escapeHtml(preview || "No recent messages.")}</div>
-  `, ".history-preview");
+  `,
+    ".history-preview",
+  );
 }
 
 function renderLogs(data) {
@@ -83,7 +103,11 @@ function renderLogs(data) {
     logsNode.innerHTML = '<div class="empty">No logs.</div>';
     return;
   }
-  setHtmlPreserveScroll(logsNode, logs.map((item) => `
+  setHtmlPreserveScroll(
+    logsNode,
+    logs
+      .map(
+        (item) => `
     <div class="log-item">
       <div class="log-meta">
         <span>${escapeHtml(item.timestamp || "")}</span>
@@ -92,7 +116,11 @@ function renderLogs(data) {
       </div>
       <div>${escapeHtml(item.message || item.event || "")}</div>
     </div>
-  `).join(""), ".log-list");
+  `,
+      )
+      .join(""),
+    ".log-list",
+  );
 }
 
 function showPanelError(node, message) {
@@ -123,15 +151,18 @@ function formatMessageContent(content) {
     return content;
   }
   if (Array.isArray(content)) {
-    return content.map((part) => {
-      if (typeof part === "string") {
-        return part;
-      }
-      if (part && typeof part.text === "string") {
-        return part.text;
-      }
-      return "";
-    }).filter(Boolean).join(" ");
+    return content
+      .map((part) => {
+        if (typeof part === "string") {
+          return part;
+        }
+        if (part && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join(" ");
   }
   return "";
 }
@@ -176,9 +207,7 @@ async function loadDashboard() {
   loading = true;
 
   try {
-    const [logsData] = await Promise.all([
-      fetchJson("/api/logs?limit=50"),
-    ]);
+    const [logsData] = await Promise.all([fetchJson("/api/logs?limit=50")]);
 
     renderLogs(logsData);
     await loadPanels();
@@ -195,4 +224,4 @@ async function loadDashboard() {
 }
 
 loadDashboard();
-setInterval(loadDashboard, 2500);
+setInterval(loadDashboard, 5000);

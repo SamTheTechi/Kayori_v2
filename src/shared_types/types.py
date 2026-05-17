@@ -8,6 +8,7 @@ from uuid import uuid4
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+from src.shared_types.helpers import maybe_float
 from src.shared_types.models import MessageEnvelope, MessageSource, MoodState
 
 
@@ -74,16 +75,11 @@ class Trigger:
             metadata=dict(data.get("metadata") or {}),
             interval_seconds=float(data.get("interval_seconds") or 0.0),
             repeat=bool(data.get("repeat", False)),
-            fuzzy_seconds=_optional_float(data.get("fuzzy_seconds")),
+            fuzzy_seconds=maybe_float(data.get("fuzzy_seconds")),
             _trigger_id=str(data.get("_trigger_id") or uuid4().hex),
-            _scheduled_for=_optional_float(data.get("_scheduled_for")),
+            _scheduled_for=maybe_float(data.get("_scheduled_for")),
         )
 
-
-def _optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    return float(value)
 
 
 __all__ = [

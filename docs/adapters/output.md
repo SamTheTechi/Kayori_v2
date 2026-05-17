@@ -6,7 +6,7 @@ Output adapters deliver `OutboundMessage` objects to external platforms.
 
 | Adapter | Target | Notes |
 |---------|--------|-------|
-| `DiscordOutputAdapter` | Discord | Supports text replies, file sends, and voice-call playback |
+| `DiscordOutputAdapter` | Discord | Supports text replies |
 | `TelegramOutputAdapter` | Telegram | Supports text and audio sends |
 | `WebhookOutputAdapter` | HTTP targets and webhook response completion | Posts outbound payloads and resolves pending webhook responses |
 | `ConsoleOutputAdapter` | stdout | Local development path |
@@ -49,14 +49,11 @@ The sink type still supports `multi`, but normal routing remains source-based.
 
 ## DiscordOutputAdapter
 
-`DiscordOutputAdapter` resolves either a DM route or a channel route, then sends text and optional audio through `DiscordRuntime`.
+`DiscordOutputAdapter` resolves either a DM route or a channel route, then sends text through `DiscordRuntime`.
 
 Current behavior:
 - supports explicit routing overrides through `discord_channel_id` and `discord_user_id` metadata
 - replies to the original message only when `message.source == DISCORD` and `reply_to_message_id` is present
-- chunks long messages to stay below Discord limits
-- sends files when `audio` is present
-- routes voice-call replies to `DiscordVoiceRuntime.play_reply()` when the outbound metadata indicates a voice-call transport
 
 ## TelegramOutputAdapter
 

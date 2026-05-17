@@ -8,7 +8,7 @@ from langchain_core.tools import BaseTool
 
 from src.agent.chat.graph import create_react_agent_graph
 from src.logger import get_logger
-from src.shared_types.models import MessageEnvelope, MoodState
+from src.shared_types.models import MessageEnvelope, MoodState, MessageSource
 
 logger = get_logger("agent.chat.service")
 
@@ -43,7 +43,7 @@ class ReactAgentService:
         envelope: MessageEnvelope,
     ) -> str:
         text = (content or "").strip()
-        if not text:
+        if not text and envelope.source != MessageSource.PROACTIVE:
             return ""
 
         state_input = {
@@ -53,6 +53,7 @@ class ReactAgentService:
             "episodic": list(episodic or []),
             "envelope": envelope,
         }
+        print(envelope, "2")
 
         try:
             result = await self._graph.ainvoke(state_input)
@@ -70,6 +71,7 @@ class ReactAgentService:
             return "I hit a temporary issue contacting the model. Please try again."
 
         reply_text = str(result.get("reply_text") or "").strip()
+        print(reply_text)
         if not reply_text:
             return "I couldn't produce a reply just now."
         return reply_text

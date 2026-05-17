@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from src.shared_types.helpers import maybe_float, maybe_str
+
 
 @dataclass(slots=True)
 class SttTranscription:
@@ -76,27 +78,14 @@ class WhisperSttAdapter:
 
         return SttTranscription(
             text=text,
-            language=_optional_str(payload.get("language")),
-            duration_seconds=_optional_float(
+            language=maybe_str(payload.get("language")),
+            duration_seconds=maybe_float(
                 payload.get("duration", payload.get(
                     "x_groq", {}).get("duration"))
             ),
             raw_response=payload,
         )
 
-
-def _optional_str(value: Any) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
-def _optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
 
 
 def _error_message(prefix: str, response: Any) -> str:

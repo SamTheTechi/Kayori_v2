@@ -1,0 +1,33 @@
+services:
+  kayori:
+    build: .
+    container_name: kayori
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_started
+
+  tts:
+    image: travisvn/openai-edge-tts
+    container_name: edge-tts
+    restart: unless-stopped
+    environment:
+      API_KEY: 123
+    ports:
+      - "5050:5050"
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      -- maxmemory 250mb
+      -- maxmemory-policy allkeys-lru

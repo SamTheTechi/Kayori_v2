@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from langchain_core.messages import BaseMessage, messages_from_dict, messages_to_dict
 
+from src.shared_types.helpers import maybe_float as _maybe_float, maybe_int as _maybe_int, maybe_str as _maybe_str
+
 
 EMOTIONS = (
     "Affection",
@@ -152,116 +154,38 @@ class LifeNote:
 
 @dataclass(slots=True)
 class InteractionState:
+    sent_today: int = 0
+    sent_day: str | None = None
     last_user_message_at: str | None = None
     last_proactive_message_at: str | None = None
-    ignored_proactive_count: int = 0
-    proactive_sent_today: int = 0
-    proactive_sent_day: str | None = None
-    last_route_source: str | None = None
-    last_channel_id: str | None = None
-    last_target_user_id: str | None = None
-    last_author_id: str | None = None
+    route_source: str | None = None
+    route_channel_id: str | None = None
+    route_target_user_id: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "sent_today": max(0, int(self.sent_today or 0)),
+            "sent_day": _maybe_str(self.sent_day),
             "last_user_message_at": _maybe_str(self.last_user_message_at),
             "last_proactive_message_at": _maybe_str(self.last_proactive_message_at),
-            "ignored_proactive_count": max(0, int(self.ignored_proactive_count or 0)),
-            "proactive_sent_today": max(0, int(self.proactive_sent_today or 0)),
-            "proactive_sent_day": _maybe_str(self.proactive_sent_day),
-            "last_route_source": _maybe_str(self.last_route_source),
-            "last_channel_id": _maybe_str(self.last_channel_id),
-            "last_target_user_id": _maybe_str(self.last_target_user_id),
-            "last_author_id": _maybe_str(self.last_author_id),
+            "route_source": _maybe_str(self.route_source),
+            "route_channel_id": _maybe_str(self.route_channel_id),
+            "route_target_user_id": _maybe_str(self.route_target_user_id),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "InteractionState":
         return cls(
+            sent_today=max(0, int(data.get("sent_today", 0) or 0)),
+            sent_day=_maybe_str(data.get("sent_day")),
             last_user_message_at=_maybe_str(data.get("last_user_message_at")),
-            last_proactive_message_at=_maybe_str(
-                data.get("last_proactive_message_at")),
-            ignored_proactive_count=max(
-                0, int(data.get("ignored_proactive_count", 0) or 0)),
-            proactive_sent_today=max(
-                0, int(data.get("proactive_sent_today", 0) or 0)),
-            proactive_sent_day=_maybe_str(data.get("proactive_sent_day")),
-            last_route_source=_maybe_str(data.get("last_route_source")),
-            last_channel_id=_maybe_str(data.get("last_channel_id")),
-            last_target_user_id=_maybe_str(data.get("last_target_user_id")),
-            last_author_id=_maybe_str(data.get("last_author_id")),
+            last_proactive_message_at=_maybe_str(data.get("last_proactive_message_at")),
+            route_source=_maybe_str(data.get("route_source")),
+            route_channel_id=_maybe_str(data.get("route_channel_id")),
+            route_target_user_id=_maybe_str(data.get("route_target_user_id")),
         )
 
 
-# @dataclass(slots=True)
-# class LocationState:
-#     latitude: float = 0.0
-#     longitude: float = 0.0
-#     timestamp: float = 0.0
-#
-#     def as_dict(self) -> dict[str, float]:
-#         return {
-#             "latitude": self.latitude,
-#             "longitude": self.longitude,
-#             "timestamp": self.timestamp,
-#         }
-#
-#     @classmethod
-#     def from_dict(cls, values: dict[str, Any]) -> LocationState:
-#         return cls(
-#             latitude=float(values.get("latitude", 0.0)),
-#             longitude=float(values.get("longitude", 0.0)),
-#             timestamp=float(values.get("timestamp", 0.0)),
-#         )
-
-
-# @dataclass(slots=True)
-# class MessageAttachment:
-#     kind: str = "image"
-#     url: str = ""
-#     mime_type: str | None = None
-#     filename: str | None = None
-#     size_bytes: int | None = None
-#     width: int | None = None
-#     height: int | None = None
-#     duration_seconds: float | None = None
-#     language: str | None = None
-#     transcript: str | None = None
-#     ocr_text: str | None = None
-#     description: str | None = None
-#
-#     def to_dict(self) -> dict[str, Any]:
-#         return {
-#             "kind": self.kind,
-#             "url": self.url,
-#             "mime_type": self.mime_type,
-#             "filename": self.filename,
-#             "size_bytes": self.size_bytes,
-#             "width": self.width,
-#             "height": self.height,
-#             "duration_seconds": self.duration_seconds,
-#             "language": self.language,
-#             "transcript": self.transcript,
-#             "ocr_text": self.ocr_text,
-#             "description": self.description,
-#         }
-#
-#     @classmethod
-#     def from_dict(cls, values: dict[str, Any]) -> MessageAttachment:
-#         return cls(
-#             kind=str(values.get("kind", "image")),
-#             url=str(values.get("url", "")).strip(),
-#             mime_type=_maybe_str(values.get("mime_type")),
-#             filename=_maybe_str(values.get("filename")),
-#             size_bytes=_maybe_int(values.get("size_bytes")),
-#             width=_maybe_int(values.get("width")),
-#             height=_maybe_int(values.get("height")),
-#             duration_seconds=_maybe_float(values.get("duration_seconds")),
-#             language=_maybe_str(values.get("language")),
-#             transcript=_maybe_str(values.get("transcript")),
-#             ocr_text=_maybe_str(values.get("ocr_text")),
-#             description=_maybe_str(values.get("description")),
-#         )
 
 
 @dataclass(slots=True)
@@ -508,30 +432,6 @@ def _audio_payload_from_any(data: dict[str, Any]) -> AudioPayload | None:
             return payload
     return AudioPayload.from_legacy_dict(data)
 
-
-def _maybe_str(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def _maybe_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except Exception:
-        return None
-
-
-def _maybe_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except Exception:
-        return None
 
 
 def _maybe_base64(value: Any) -> str | None:

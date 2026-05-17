@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from src.adapters.runtime.webhook_runtime import WebhookRoute, WebhookRuntime
 from src.adapters.webhook_common import with_webhook_kind
+from src.shared_types.helpers import clean_text, maybe_float
 from src.shared_types.models import AudioPayload, MessageEnvelope, MessageSource
 from src.shared_types.protocol import InputAdapter, MessageBus
 
@@ -70,7 +71,7 @@ class WebhookInputAdapter(InputAdapter):
                 detail="JSON payload must be an object.",
             )
 
-        content = _clean_text(payload.get("content"))
+        content = clean_text(payload.get("content"))
         if not content:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -93,10 +94,10 @@ class WebhookInputAdapter(InputAdapter):
         envelope = MessageEnvelope(
             source=MessageSource.WEBHOOK,
             content=content,
-            channel_id=_clean_text(payload.get("channel_id")) or "webhook",
-            author_id=_clean_text(payload.get("author_id")) or "webhook",
-            message_id=_clean_text(payload.get("message_id")),
-            target_user_id=_clean_text(payload.get("target_user_id")),
+            channel_id=clean_text(payload.get("channel_id")) or "webhook",
+            author_id=clean_text(payload.get("author_id")) or "webhook",
+            message_id=clean_text(payload.get("message_id")),
+            target_user_id=clean_text(payload.get("target_user_id")),
             metadata=metadata,
         )
         response_payload = await self._dispatch_and_wait(envelope)
@@ -130,21 +131,21 @@ class WebhookInputAdapter(InputAdapter):
                 "user_agent": str(request.headers.get("user-agent", "")).strip(),
                 "audio_filename": upload.filename,
                 "audio_content_type": upload.content_type,
-                "language": _clean_text(form.get("language")) or None,
-                "stt_prompt": _clean_text(form.get("prompt")) or None,
-                "tts_voice": _clean_text(form.get("voice")) or None,
-                "tts_response_format": _clean_text(form.get("response_format")) or None,
+                "language": clean_text(form.get("language")) or None,
+                "stt_prompt": clean_text(form.get("prompt")) or None,
+                "tts_voice": clean_text(form.get("voice")) or None,
+                "tts_response_format": clean_text(form.get("response_format")) or None,
                 "tts_speed": _optional_float(form.get("speed")),
             }
         )
 
         envelope = MessageEnvelope(
             source=MessageSource.WEBHOOK,
-            content=_clean_text(form.get("content")) or None,
-            channel_id=_clean_text(form.get("channel_id")) or "webhook-audio",
-            author_id=_clean_text(form.get("author_id")) or "webhook-audio",
-            message_id=_clean_text(form.get("message_id")),
-            target_user_id=_clean_text(form.get("target_user_id")),
+            content=clean_text(form.get("content")) or None,
+            channel_id=clean_text(form.get("channel_id")) or "webhook-audio",
+            author_id=clean_text(form.get("author_id")) or "webhook-audio",
+            message_id=clean_text(form.get("message_id")),
+            target_user_id=clean_text(form.get("target_user_id")),
             audio=AudioPayload(
                 base64_data=base64.b64encode(audio_bytes).decode("ascii"),
                 mime_type=upload.content_type or "audio/wav",
@@ -177,10 +178,6 @@ class WebhookInputAdapter(InputAdapter):
             raise
 
 
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
 def _extract_upload(value: Any) -> Any | None:
     if value is None:
         return None
@@ -192,7 +189,7 @@ def _extract_upload(value: Any) -> Any | None:
 
 
 def _optional_float(value: Any) -> float | None:
-    text = _clean_text(value)
+    text = clean_text(value)
     if not text:
         return None
     try:

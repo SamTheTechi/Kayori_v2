@@ -7,7 +7,6 @@ Input adapters listen to external sources and publish `MessageEnvelope` objects 
 | Adapter | Source | Notes |
 |---------|--------|-------|
 | `DiscordInputAdapter` | Discord text messages | Uses `DiscordRuntime` |
-| `DiscordVoiceInputAdapter` | Discord voice utterances | Uses `DiscordVoiceRuntime` and publishes audio envelopes |
 | `TelegramInputAdapter` | Telegram updates | Supports text and audio |
 | `WebhookInputAdapter` | HTTP routes on `WebhookRuntime` | Handles text and uploaded audio |
 | `ConsoleInputGateway` | stdin | Local testing path |
@@ -47,19 +46,6 @@ Current envelope behavior:
 - DMs are routed with `target_user_id`
 - guild channels are routed with `channel_id`
 - metadata currently includes `author_display_name`
-
-## DiscordVoiceInputAdapter
-
-`DiscordVoiceInputAdapter` registers a voice handler on `DiscordVoiceRuntime` and publishes audio-first envelopes.
-
-Current envelope behavior:
-- `source=MessageSource.DISCORD`
-- `content=None`
-- `audio` is populated from captured WAV bytes
-- `voice_mode=True`
-- metadata includes `transport="discord_vc"`, guild/channel/speaker fields, and `session_kind="voice_call"`
-
-Speech-to-text is not performed inside the adapter. The orchestrator normalizes audio envelopes later through the configured STT adapter.
 
 ## TelegramInputAdapter
 

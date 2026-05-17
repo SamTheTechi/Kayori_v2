@@ -15,17 +15,16 @@ from src.adapters.audio.stt import WhisperSttAdapter
 from src.adapters.http.dashboard import register_dashboard_routes
 from src.adapters.http.logs import register_logs_routes
 from src.adapters.http.metrics import register_metrics_routes
-from src.adapters.http.ping import register_ping_routes
+
 from src.adapters.audio.tts import EdgeTtsAdapter
 from src.adapters.bus.redis_bus import RedisMessageBus
-from src.adapters.input.discord_input import DiscordInputAdapter, DiscordVoiceInputAdapter
+from src.adapters.input.discord_input import DiscordInputAdapter
 from src.adapters.input.telegram_input import TelegramInputAdapter
 from src.adapters.input.webhook_input import WebhookInputAdapter
 from src.adapters.output.discord_output import DiscordOutputAdapter
 from src.adapters.output.telegram_output import TelegramOutputAdapter
 from src.adapters.output.webhook_output import WebhookOutputAdapter
 from src.adapters.runtime.discord_runtime import DiscordRuntime
-from src.adapters.runtime.discord_voice_runtime import DiscordVoiceRuntime
 from src.adapters.runtime.telegram_runtime import TelegramRuntime
 from src.adapters.runtime.webhook_runtime import WebhookRuntime
 from src.adapters.state.redis import RedisStateStore
@@ -62,13 +61,12 @@ async def _main() -> None:
     # Runtime configuration.
     discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
     discord_output_user_id = os.getenv("DISCORD_USER_ID", "")
-    discord_voice_channel_id = str(
-        os.getenv("DISCORD_VOICE_CHANNEL_ID", "")).strip() or None
+
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     telegram_output_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+
     groq_api_key = str(os.getenv("API_KEY", "")).strip()
-    redis_url = str(os.getenv("REDIS_URL", "redis://localhost:6379")
-                    ).strip() or "redis://localhost:6379"
+    redis_url = str(os.getenv("REDIS_URL", "redis://localhost:6379")).strip()
 
     webhook_bearer_token = (
         str(os.getenv("WEBHOOK_BEARER_TOKEN", "")).strip() or "123"
@@ -79,6 +77,7 @@ async def _main() -> None:
     webhook_port = int(
         str(os.getenv("WEBHOOK_SERVER_PORT", "8080")).strip() or "8080"
     )
+
     tts_base_url = (
         str(os.getenv("EDGE_TTS_BASE_URL", "http://localhost:5050/v1")).strip()
         or "http://localhost:5050/v1"
@@ -108,19 +107,12 @@ async def _main() -> None:
         if primary_chat_app == "discord"
         else None
     )
-    discord_voice_runtime = (
-        DiscordVoiceRuntime(
-            runtime=discord_runtime,
-            voice_channel_id=discord_voice_channel_id,
-        )
-        if discord_runtime is not None and discord_voice_channel_id
-        else None
-    )
     telegram_runtime = (
         TelegramRuntime(token=telegram_token)
         if primary_chat_app == "telegram"
         else None
     )
+
     webhook_runtime = WebhookRuntime(
         host=webhook_host,
         port=webhook_port,
@@ -131,8 +123,6 @@ async def _main() -> None:
     sync_redis = SyncRedis.from_url(redis_url)
     bus = RedisMessageBus(async_redis)
     state = RedisStateStore(async_redis)
-
-    await _seed_life_profile_if_empty(state)
 
     embedding_model = FastEmbedEmbeddings(
         model_name="BAAI/bge-small-en-v1.5"
@@ -158,7 +148,6 @@ async def _main() -> None:
     outputs = _build_outputs(
         primary_chat_app=primary_chat_app,
         discord_runtime=discord_runtime,
-        discord_voice_runtime=discord_voice_runtime,
         discord_output_user_id=discord_output_user_id,
         telegram_runtime=telegram_runtime,
         telegram_output_chat_id=telegram_output_chat_id,
@@ -225,7 +214,6 @@ async def _main() -> None:
         primary_chat_app=primary_chat_app,
         bus=bus,
         discord_runtime=discord_runtime,
-        discord_voice_runtime=discord_voice_runtime,
         telegram_runtime=telegram_runtime,
         webhook_runtime=webhook_runtime,
     )
@@ -241,10 +229,18 @@ async def _main() -> None:
     input_tasks: list[asyncio.Task[None]] = []
 
     await output_dispatcher.start()
+
+    await _seed_life_profile(state)
+    await _seed_proactive_route(
+        state,
+        primary_chat_app,
+        discord_output_user_id,
+        telegram_output_chat_id
+    )
     register_dashboard_routes(webhook_runtime)
-    register_ping_routes(webhook_runtime)
     register_logs_routes(webhook_runtime)
     register_metrics_routes(webhook_runtime, state)
+
     await webhook_runtime.start()
     await scheduler.start()
 
@@ -253,16 +249,15 @@ async def _main() -> None:
             Trigger(
                 trigger_type=TriggerType.PRECISE,
                 source=MessageSource.LIFE,
-                interval_seconds=20,
+                interval_seconds=60 * 60 * 12,
                 repeat=True
             )
         )
         await scheduler.push(
             Trigger(
-                trigger_type=TriggerType.FUZZY,
+                trigger_type=TriggerType.PRECISE,
                 source=MessageSource.PROACTIVE,
-                interval_seconds=60 * 60 * 4,
-                fuzzy_seconds=60 * 60 * 2,
+                interval_seconds=10,
                 repeat=True
             )
         )
@@ -290,7 +285,11 @@ async def _main() -> None:
             task.cancel()
 
         await asyncio.gather(*input_tasks, return_exceptions=True)
+
         # await redis_client.shutdown()
+        # await sync_redis.shutdown()
+        # await async_redis.shutdown()
+
         orchestrator_task.cancel()
         await asyncio.gather(orchestrator_task, return_exceptions=True)
         await scheduler.stop()
@@ -302,7 +301,6 @@ def _build_outputs(
     *,
     primary_chat_app: PrimaryChatApp,
     discord_runtime: DiscordRuntime | None,
-    discord_voice_runtime: DiscordVoiceRuntime | None,
     discord_output_user_id: str,
     telegram_runtime: TelegramRuntime | None,
     telegram_output_chat_id: str,
@@ -314,7 +312,6 @@ def _build_outputs(
         _build_primary_output(
             primary_chat_app=primary_chat_app,
             discord_runtime=discord_runtime,
-            discord_voice_runtime=discord_voice_runtime,
             discord_output_user_id=discord_output_user_id,
             telegram_runtime=telegram_runtime,
             telegram_output_chat_id=telegram_output_chat_id,
@@ -332,7 +329,6 @@ def _build_inputs(
     primary_chat_app: PrimaryChatApp,
     bus: MessageBus,
     discord_runtime: DiscordRuntime | None,
-    discord_voice_runtime: DiscordVoiceRuntime | None,
     telegram_runtime: TelegramRuntime | None,
     webhook_runtime: WebhookRuntime,
 ) -> list[InputAdapter]:
@@ -341,7 +337,6 @@ def _build_inputs(
             primary_chat_app=primary_chat_app,
             bus=bus,
             discord_runtime=discord_runtime,
-            discord_voice_runtime=discord_voice_runtime,
             telegram_runtime=telegram_runtime,
         ),
         WebhookInputAdapter(
@@ -355,7 +350,6 @@ def _build_primary_output(
     *,
     primary_chat_app: PrimaryChatApp,
     discord_runtime: DiscordRuntime | None,
-    discord_voice_runtime: DiscordVoiceRuntime | None,
     discord_output_user_id: str,
     telegram_runtime: TelegramRuntime | None,
     telegram_output_chat_id: str,
@@ -366,17 +360,19 @@ def _build_primary_output(
                 "Discord runtime is required for Discord output.")
         return DiscordOutputAdapter(
             runtime=discord_runtime,
-            voice_runtime=discord_voice_runtime,
             default_channel_id=None,
             default_user_id=discord_output_user_id,
         )
-
-    if telegram_runtime is None:
-        raise RuntimeError("Telegram runtime is required for Telegram output.")
-    return TelegramOutputAdapter(
-        runtime=telegram_runtime,
-        default_chat_id=telegram_output_chat_id,
-    )
+    elif primary_chat_app == "telegram":
+        if telegram_runtime is None:
+            raise RuntimeError(
+                "Telegram runtime is required for Telegram output.")
+        return TelegramOutputAdapter(
+            runtime=telegram_runtime,
+            default_chat_id=telegram_output_chat_id,
+        )
+    else:
+        raise RuntimeError("The Correct runtime is required.")
 
 
 def _build_primary_inputs(
@@ -384,30 +380,31 @@ def _build_primary_inputs(
     primary_chat_app: PrimaryChatApp,
     bus: MessageBus,
     discord_runtime: DiscordRuntime | None,
-    discord_voice_runtime: DiscordVoiceRuntime | None,
     telegram_runtime: TelegramRuntime | None,
 ) -> list[InputAdapter]:
+
     if primary_chat_app == "discord":
         if discord_runtime is None:
             raise RuntimeError(
                 "Discord runtime is required for Discord input.")
-        inputs: list[InputAdapter] = [
-            DiscordInputAdapter(runtime=discord_runtime, bus=bus)
+        return [
+            DiscordInputAdapter(
+                runtime=discord_runtime, bus=bus
+            )
         ]
-        if discord_voice_runtime is not None:
-            inputs.append(DiscordVoiceInputAdapter(
-                runtime=discord_voice_runtime, bus=bus))
-        return inputs
-
-    if telegram_runtime is None:
-        raise RuntimeError("Telegram runtime is required for Telegram input.")
-    return [
-        TelegramInputAdapter(
-            runtime=telegram_runtime,
-            bus=bus,
-            allowed_chat_ids=None,
-        )
-    ]
+    elif primary_chat_app == "telegram":
+        if telegram_runtime is None:
+            raise RuntimeError(
+                "Telegram runtime is required for Telegram input.")
+        return [
+            TelegramInputAdapter(
+                runtime=telegram_runtime,
+                bus=bus,
+                allowed_chat_ids=None,
+            )
+        ]
+    else:
+        raise RuntimeError("The Correct runtime is required.")
 
 
 def _resolve_primary_chat_app() -> PrimaryChatApp:
@@ -424,14 +421,10 @@ def _resolve_output_sink_mode() -> Literal["direct", "multi"]:
     if value not in {"direct", "multi"}:
         raise RuntimeError(
             "OUTPUT_SINK_MODE must be either 'direct' or 'multi'.")
-    return value  # type: ignore[return-value]
+    return value
 
 
-def main() -> None:
-    asyncio.run(_main())
-
-
-async def _seed_life_profile_if_empty(state: RedisStateStore) -> None:
+async def _seed_life_profile(state: RedisStateStore) -> None:
     profile_path = str(os.getenv("LIFE_PROFILE_FILE", "")).strip()
     if not profile_path:
         return
@@ -448,6 +441,34 @@ async def _seed_life_profile_if_empty(state: RedisStateStore) -> None:
         return
 
     await state.replace_life_profile(profile_text)
+
+
+async def _seed_proactive_route(
+    state: RedisStateStore,
+    primary_chat_app: PrimaryChatApp,
+    discord_output_user_id: str,
+    telegram_output_chat_id: str,
+) -> None:
+    interaction = await state.get_interaction_state()
+    if interaction.route_source:
+        return
+
+    if primary_chat_app == "discord":
+        interaction.route_source = "discord"
+        interaction.route_target_user_id = discord_output_user_id or None
+        interaction.route_channel_id = None
+    elif primary_chat_app == "telegram":
+        interaction.route_source = "telegram"
+        interaction.route_target_user_id = telegram_output_chat_id or None
+        interaction.route_channel_id = None
+    else:
+        raise RuntimeError("The Correct runtime is required.")
+
+    await state.set_interaction_state(interaction)
+
+
+def main() -> None:
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":

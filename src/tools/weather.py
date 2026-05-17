@@ -7,6 +7,7 @@ import httpx
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, PrivateAttr
 
+from src.shared_types.helpers import clean_text, maybe_float
 from src.shared_types.protocol import StateStore
 from src.shared_types.tool_schemas import WeatherToolArgs
 
@@ -38,13 +39,13 @@ class WeatherTool(BaseTool):
         if not self._api_key:
             return "Weather tool is disabled because WEATHER_API_KEY is not configured."
 
-        location_query = _clean_text(location_override)
+        location_query = clean_text(location_override)
         if not location_query:
             location_query = _location_from_state(state)
         if not location_query:
             location_query = await _location_from_store(self._state_store)
         if not location_query:
-            location_query = _clean_text(getenv("WEATHER_DEFAULT_LOCATION", ""))
+            location_query = clean_text(getenv("WEATHER_DEFAULT_LOCATION", ""))
         if not location_query:
             return (
                 "Weather location is unavailable. Provide location_override or set "
@@ -102,20 +103,10 @@ class WeatherTool(BaseTool):
             return None
 
 
-def _clean_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def _to_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except Exception:
-        return None
-
 
 def _coords_to_query(latitude: Any, longitude: Any) -> str | None:
-    lat = _to_float(latitude)
-    lon = _to_float(longitude)
+    lat = maybe_float(latitude)
+    lon = maybe_float(longitude)
     if lat is None or lon is None:
         return None
     if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
@@ -136,7 +127,7 @@ def _location_from_envelope_like(envelope: Any) -> str:
         metadata = dict(getattr(envelope, "metadata", {}) or {})
 
     for key in ("location_query", "weather_location", "location", "city", "address"):
-        text = _clean_text(metadata.get(key))
+        text = clean_text(metadata.get(key))
         if text:
             return text
 
@@ -159,7 +150,7 @@ def _location_from_state(state: dict[str, Any] | None) -> str:
         "city",
         "address",
     ):
-        text = _clean_text(payload.get(key))
+        text = clean_text(payload.get(key))
         if text:
             return text
 
@@ -200,7 +191,7 @@ def _weather_error_message(response: httpx.Response) -> str:
     if isinstance(payload, dict):
         error = payload.get("error")
         if isinstance(error, dict):
-            message = _clean_text(error.get("message"))
+            message = clean_text(error.get("message"))
             if message:
                 return f"Weather API error ({response.status_code}): {message}"
 

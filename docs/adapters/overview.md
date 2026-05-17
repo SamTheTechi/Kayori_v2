@@ -20,7 +20,6 @@ Current adapter groups:
 
 Current input adapters:
 - `DiscordInputAdapter`
-- `DiscordVoiceInputAdapter`
 - `TelegramInputAdapter`
 - `WebhookInputAdapter`
 - `ConsoleInputGateway`
@@ -41,7 +40,6 @@ They accept `OutboundMessage` objects selected by `OutputSink` and translate the
 
 Current runtime adapters:
 - `DiscordRuntime`
-- `DiscordVoiceRuntime`
 - `TelegramRuntime`
 - `WebhookRuntime`
 
@@ -90,7 +88,7 @@ From `main.py`:
 - one primary chat app is selected with `PRIMARY_CHAT_APP`
 - webhook input and webhook output are also wired
 - Redis-backed bus, state, scheduler, and episodic memory are used
-- Discord voice input is enabled only when `DiscordVoiceRuntime` is configured
+- generic audio support is available through adapters that publish `AudioPayload`
 
 ## Adapter Directory Structure
 

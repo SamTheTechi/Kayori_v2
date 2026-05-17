@@ -9,10 +9,6 @@ import discord
 from src.logger import get_logger
 
 DiscordMessageHandler = Callable[[discord.Message], Awaitable[None]]
-DiscordVoiceStateHandler = Callable[
-    [discord.Member, discord.VoiceState, discord.VoiceState],
-    Awaitable[None],
-]
 logger = get_logger("runtime.discord")
 
 
@@ -21,16 +17,17 @@ class DiscordRuntime:
     token: str
     name: str = "discord-runtime"
 
-    _client: discord.Client | None = field(default=None, init=False, repr=False)
-    _start_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
-    _ready: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+    _client: discord.Client | None = field(
+        default=None, init=False, repr=False)
+    _start_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False)
+    _lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, init=False, repr=False)
+    _ready: asyncio.Event = field(
+        default_factory=asyncio.Event, init=False, repr=False)
     _ref_count: int = field(default=0, init=False, repr=False)
-    _handlers: list[DiscordMessageHandler] = field(default_factory=list, init=False, repr=False)
-    _voice_state_handlers: list[DiscordVoiceStateHandler] = field(
-        default_factory=list,
-        init=False,
-        repr=False,
+    _handlers: list[DiscordMessageHandler] = field(
+        default_factory=list, init=False, repr=False
     )
 
     async def register_message_handler(self, handler: DiscordMessageHandler) -> None:
@@ -40,41 +37,33 @@ class DiscordRuntime:
 
     async def unregister_message_handler(self, handler: DiscordMessageHandler) -> None:
         async with self._lock:
-            self._handlers = [item for item in self._handlers if item is not handler]
-
-    async def register_voice_state_handler(
-        self, handler: DiscordVoiceStateHandler
-    ) -> None:
-        async with self._lock:
-            if handler not in self._voice_state_handlers:
-                self._voice_state_handlers.append(handler)
-
-    async def unregister_voice_state_handler(
-        self, handler: DiscordVoiceStateHandler
-    ) -> None:
-        async with self._lock:
-            self._voice_state_handlers = [
-                item for item in self._voice_state_handlers if item is not handler
-            ]
+            self._handlers = [
+                item for item in self._handlers if item is not handler]
 
     async def acquire(self) -> None:
         async with self._lock:
             self._ref_count += 1
             if self._ref_count == 1:
                 self._start_locked()
+
         await self._wait_until_ready()
 
     async def release(self) -> None:
+        start_task: asyncio.Task[None] | None = None
+        client: discord.Client | None = None
+
         async with self._lock:
             if self._ref_count == 0:
                 return
+
             self._ref_count -= 1
             if self._ref_count > 0:
                 return
-            client = self._client
+
             start_task = self._start_task
-            self._client = None
+            client = self._client
             self._start_task = None
+            self._client = None
             self._ready.clear()
 
         if client is not None and not client.is_closed():
@@ -91,8 +80,7 @@ class DiscordRuntime:
     def _start_locked(self) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
-        intents.voice_states = True
-        intents.guilds = True
+
         client = discord.Client(intents=intents)
 
         @client.event
@@ -108,7 +96,9 @@ class DiscordRuntime:
         async def on_message(message: discord.Message) -> None:
             if message.author == client.user:
                 return
-            for handler in list(self._handlers):
+
+            handlers = list(self._handlers)
+            for handler in handlers:
                 try:
                     await handler(message)
                 except Exception as exc:
@@ -123,35 +113,10 @@ class DiscordRuntime:
                         error=exc,
                     )
 
-        @client.event
-        async def on_voice_state_update(
-            member: discord.Member,
-            before: discord.VoiceState,
-            after: discord.VoiceState,
-        ) -> None:
-            if member == client.user:
-                return
-            for handler in list(self._voice_state_handlers):
-                try:
-                    await handler(member, before, after)
-                except Exception as exc:
-                    await logger.error(
-                        "discord_voice_state_handler_failed",
-                        "Discord voice state handler failed.",
-                        context={
-                            "member_id": str(member.id),
-                            "before_channel_id": str(
-                                getattr(getattr(before, "channel", None), "id", "")
-                            ),
-                            "after_channel_id": str(
-                                getattr(getattr(after, "channel", None), "id", "")
-                            ),
-                        },
-                        error=exc,
-                    )
-
         self._client = client
-        self._start_task = asyncio.create_task(client.start(self.token), name="discord-runtime-start")
+        self._start_task = asyncio.create_task(
+            client.start(self.token), name="discord-runtime-start"
+        )
 
     async def _wait_until_ready(self) -> None:
         while not self._ready.is_set():

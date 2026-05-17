@@ -90,16 +90,19 @@ class TelegramOutputAdapter(OutputAdapter):
             return
 
         payload = io.BytesIO(audio_bytes)
-        payload.name = (message.audio.filename if message.audio else None) or "reply.ogg"
+        payload.name = (
+            message.audio.filename if message.audio else None) or "reply.ogg"
         send_kwargs: dict[str, object] = {"chat_id": chat_id}
 
         if message.source == MessageSource.TELEGRAM and message.reply_to_message_id:
             try:
-                send_kwargs["reply_to_message_id"] = int(message.reply_to_message_id)
+                send_kwargs["reply_to_message_id"] = int(
+                    message.reply_to_message_id)
             except Exception:
                 pass
 
-        mime_type = str((message.audio.mime_type if message.audio else None) or "").lower()
+        mime_type = str(
+            (message.audio.mime_type if message.audio else None) or "").lower()
         if "ogg" in mime_type or message.voice_mode:
             await self.runtime.bot.send_voice(
                 voice=payload,

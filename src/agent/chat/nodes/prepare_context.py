@@ -23,11 +23,16 @@ def build_prepare_context_node():
         episodic = _format_episodic(list(state.get("episodic") or []))
         messages: list[BaseMessage] = list(history)
         if envelope is not None and envelope.source == MessageSource.PROACTIVE:
+            time_since = str(dict(envelope.metadata or {}).get(
+                "time_since_last", "a while"))
             messages.append(
                 SystemMessage(
                     content=(
                         "This is a proactive outreach moment, not a user message. "
                         "Use the instruction below as an internal trigger only. "
+                        f"It has been {time_since} since the user last said anything. "
+                        "Let this influence how you open — warmer if it's been a while, "
+                        "lighter if it's fresh. "
                         "If it helps you avoid stale or generic outreach, use "
                         "`life_info_tool` for private continuity or TavilySearch for "
                         "fresh real-world texture before you write the message."
@@ -38,7 +43,7 @@ def build_prepare_context_node():
                 SystemMessage(
                     content=(
                         "Send one short natural check-in first. Keep it simple, human, "
-                        "and self-started."
+                        "and self-started. Vary your opening each time."
                     )
                 )
             )

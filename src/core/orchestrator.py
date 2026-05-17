@@ -23,6 +23,7 @@ from src.shared_types.protocol import (
     OutputAdapter,
     StateStore,
 )
+from src.shared_types.helpers import maybe_float, maybe_str
 from src.shared_types.models import AudioPayload, LifeNote, MessageEnvelope, MessageSource, OutboundMessage
 from src.shared_types.types import Trigger, TriggerType
 
@@ -171,21 +172,23 @@ class AgentOrchestrator:
         )
 
     async def _handle_proactive(self, envelope: MessageEnvelope) -> None:
-        del envelope
-        today = datetime.now(UTC).date().isoformat()
         interaction = await self.state_store.get_interaction_state()
-        if interaction.proactive_sent_day != today:
-            interaction.proactive_sent_day = today
-            interaction.proactive_sent_today = 0
 
-        if (
-            interaction.last_proactive_message_at
-            and (
-                not interaction.last_user_message_at
-                or interaction.last_user_message_at <= interaction.last_proactive_message_at
-            )
+        time_since_last = _format_time_since_last(
+            interaction.last_user_message_at)
+        now = datetime.now(UTC)
+        today = now.date().isoformat()
+
+        if interaction.sent_day != today:
+            interaction.sent_day = today
+            interaction.sent_today = 0
+
+        if interaction.last_proactive_message_at and (
+            not interaction.last_user_message_at
+            # or interaction.last_user_message_at <= interaction.last_proactive_message_at
         ):
-            interaction.ignored_proactive_count += 1
+            await self.state_store.set_interaction_state(interaction)
+            return
 
         mood = await self.state_store.get_mood()
         score = (
@@ -193,35 +196,38 @@ class AgentOrchestrator:
             + float(mood.Attachment)
             + float(mood.Confidence)
         ) / 3.0
-        cap = 0 if score < 0.58 else 1 if score < 0.68 else 2 if score < 0.78 else 3
+        # cap = 0 if score < 0.58 else 1 if score < 0.68 else 2 if score < 0.78 else 3
+        cap = 100
 
-        if (
-            not interaction.last_route_source
-            or cap <= 0
-            or interaction.proactive_sent_today >= cap
-            or interaction.ignored_proactive_count >= 2
-        ):
+        if cap <= 0 or interaction.sent_today >= cap:
             await self.state_store.set_interaction_state(interaction)
             return
 
         proactive_envelope = MessageEnvelope(
             source=MessageSource.PROACTIVE,
             content="",
-            channel_id=interaction.last_channel_id,
-            target_user_id=interaction.last_target_user_id,
-            author_id=interaction.last_author_id,
-            metadata={"route_source": interaction.last_route_source},
+            channel_id=interaction.route_channel_id,
+            target_user_id=interaction.route_target_user_id,
+            author_id=None,
+            metadata={
+                "route_source": interaction.route_source or "",
+                "time_since_last": time_since_last,
+            },
         )
+
+        interaction.sent_today += 1
         await self.state_store.set_interaction_state(interaction)
         await self._handle_chat(proactive_envelope)
 
     async def _handle_chat(self, envelope: MessageEnvelope) -> None:
         content = await self._normalize_inbound_content(envelope)
+
         if not content and envelope.source != MessageSource.PROACTIVE:
             return
 
         mood = await self.state_store.get_mood()
         messages_for_agent = await self.state_store.get_agent_context(AGENT_WINDOW)
+
         next_mood = mood
         if envelope.source != MessageSource.PROACTIVE:
             messages_for_mood_analysis = await self.state_store.get_mood_context(MOOD_WINDOW)
@@ -236,7 +242,6 @@ class AgentOrchestrator:
             query=content,
             limit=2,
         )
-
         reply_text = await self.agent.respond(
             content=content,
             messages=messages_for_agent,
@@ -249,7 +254,7 @@ class AgentOrchestrator:
             await self.state_store.append_messages(
                 [AIMessage(content=reply_text)]
             )
-            await self._record_proactive_send()
+            await self._record_user_interaction(proactive=True)
         else:
             await self.state_store.append_messages(
                 [
@@ -257,7 +262,7 @@ class AgentOrchestrator:
                     AIMessage(content=reply_text)
                 ]
             )
-            await self._record_user_interaction(envelope)
+            await self._record_user_interaction()
         await self._reschedule_compact_trigger()
 
         try:
@@ -278,14 +283,12 @@ class AgentOrchestrator:
 
         try:
             if envelope.source == MessageSource.PROACTIVE:
-                route_source = str(dict(envelope.metadata or {}).get(
-                    "route_source") or "").strip()
-                if not route_source:
-                    return
+                interaction = await self.state_store.get_interaction_state()
                 await self.output.send(
                     await self._build_outbound(
                         MessageEnvelope(
-                            source=MessageSource(route_source),
+                            source=MessageSource(
+                                interaction.route_source or ""),
                             content=envelope.content,
                             channel_id=envelope.channel_id,
                             author_id=envelope.author_id,
@@ -293,7 +296,7 @@ class AgentOrchestrator:
                             target_user_id=envelope.target_user_id,
                             metadata={},
                         ),
-                        reply_text,
+                        reply_text
                     )
                 )
             else:
@@ -326,25 +329,14 @@ class AgentOrchestrator:
 
     async def _record_user_interaction(
         self,
-        envelope: MessageEnvelope,
+        proactive: bool = False,
     ) -> None:
         state = await self.state_store.get_interaction_state()
-        state.last_user_message_at = datetime.now(UTC).isoformat()
-
-        state.last_route_source = envelope.source.value
-        state.last_channel_id = envelope.channel_id
-        state.last_target_user_id = envelope.target_user_id
-        state.last_author_id = envelope.author_id
-        if state.last_proactive_message_at:
-            state.ignored_proactive_count = 0
-        await self.state_store.set_interaction_state(state)
-
-    async def _record_proactive_send(self) -> None:
-        state = await self.state_store.get_interaction_state()
-        now = datetime.now(UTC)
-        state.last_proactive_message_at = now.isoformat()
-        state.proactive_sent_today += 1
-        state.proactive_sent_day = now.date().isoformat()
+        now = datetime.now(UTC).isoformat()
+        if proactive:
+            state.last_proactive_message_at = now
+        else:
+            state.last_user_message_at = now
         await self.state_store.set_interaction_state(state)
 
     async def _build_outbound(self, envelope: MessageEnvelope, content: str) -> OutboundMessage:
@@ -362,7 +354,7 @@ class AgentOrchestrator:
             mention_author=bool(
                 envelope.channel_id and not envelope.target_user_id),
         )
-        if not self._should_synthesize_voice_reply(envelope, outbound):
+        if not self._should_synthesize_audio_reply(envelope, outbound):
             return outbound
 
         tts = self.tts
@@ -371,10 +363,10 @@ class AgentOrchestrator:
 
         synthesis = await tts.synthesize(
             text=str(outbound.content or "").strip(),
-            voice=_optional_text(outbound.metadata.get("tts_voice")),
-            response_format=_optional_text(
+            voice=maybe_str(outbound.metadata.get("tts_voice")),
+            response_format=maybe_str(
                 outbound.metadata.get("tts_response_format")),
-            speed=_optional_float(outbound.metadata.get("tts_speed")),
+            speed=maybe_float(outbound.metadata.get("tts_speed")),
         )
         outbound.audio = AudioPayload.from_bytes(
             synthesis.audio_bytes,
@@ -414,10 +406,10 @@ class AgentOrchestrator:
                 envelope.audio.filename if envelope.audio else None) or "audio.wav",
             mime_type=(
                 envelope.audio.mime_type if envelope.audio else None) or "audio/wav",
-            language=_optional_text(envelope.metadata.get("language")),
-            prompt=_optional_text(envelope.metadata.get("stt_prompt")),
+            language=maybe_str(envelope.metadata.get("language")),
+            prompt=maybe_str(envelope.metadata.get("stt_prompt")),
         )
-        print(transcription)
+
         await logger.info(
             "inbound_audio_stt_completed",
             "Completed STT for inbound audio envelope.",
@@ -438,7 +430,7 @@ class AgentOrchestrator:
         return str(envelope.content or "").strip()
 
     @staticmethod
-    def _should_synthesize_voice_reply(
+    def _should_synthesize_audio_reply(
         envelope: MessageEnvelope,
         outbound: OutboundMessage,
     ) -> bool:
@@ -455,20 +447,29 @@ def _compacted_summary(messages: list[BaseMessage]) -> str:
     return str(first.content or "").strip()
 
 
+def _format_time_since_last(last_user_message_at: str | None) -> str:
+    if not last_user_message_at:
+        return "a while"
+    try:
+        delta = datetime.now(
+            UTC) - datetime.fromisoformat(last_user_message_at)
+        hours = delta.total_seconds() / 3600
+    except Exception:
+        return "a while"
+    if hours < 1:
+        return "a few minutes ago"
+    if hours < 2:
+        return "about an hour ago"
+    if hours < 6:
+        return "a few hours ago"
+    if hours < 24:
+        return f"about {int(hours)} hours ago"
+    return f"{int(hours / 24)} days ago"
+
+
 def _life_note(content: str) -> LifeNote:
     return LifeNote(content=" ".join(str(content or "").strip().split()), timestamp=datetime.now(UTC).isoformat())
 
-
-def _optional_text(value: object) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
-def _optional_float(value: object) -> float | None:
-    try:
-        return None if value is None else float(value)
-    except Exception:
-        return None
 
 
 def _default_audio_filename(content_type: str) -> str:
