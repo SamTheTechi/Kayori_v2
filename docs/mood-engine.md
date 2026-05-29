@@ -107,4 +107,4 @@ await state_store.set_mood(next_mood)
 
 ## File Reference
 
-[`src/core/mood_engine.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/mood_engine.py)
+[`agent/orchestration/mood_engine.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/orchestration/mood_engine.py)

@@ -78,13 +78,24 @@ python main.py
 ## Project Structure
 
 ```
-src/
-├── adapters/     # Input/output, bus, memory, state, scheduler backends
-├── agent/        # LangGraph-based agent service and nodes
-├── core/         # Orchestrator, mood, scheduler, episodic memory, contraction
-├── templates/    # Prompt templates used by core services
-├── tools/        # Built-in tools
-└── shared_types/ # Models, protocols, trigger types, and envelope types
+agent/             # LangGraph agents and runtime brain
+├── chat/          # ReAct chat agent graph and nodes
+├── life/          # Internal "life" reflection agent
+├── orchestration/ # Orchestrator, mood engine, output sink
+├── memory/        # Episodic memory store + conversation contraction
+└── prompts/       # Prompt templates
+gateway/           # Platform adapters and infrastructure backends
+├── platforms/     # discord, telegram, webhook, console (input/output/runtime)
+├── bus/           # Message bus (in-memory, redis)
+├── state/         # State store (in-memory, redis)
+├── memory/        # Episodic memory backends (in-memory, redis, pinecone)
+├── scheduler/     # Scheduler backends + service
+├── audio/         # Whisper STT + Edge TTS
+└── http/          # Dashboard, logs, metrics routes
+config/            # Settings, logging, exceptions
+shared_types/      # Models, protocols, trigger types, and envelope types
+tools/             # Built-in tools (auto-registered)
+web/               # Dashboard static assets
 ```
 
 ## License

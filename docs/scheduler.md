@@ -77,4 +77,4 @@ await scheduler.push(Trigger(
 
 ## File Reference
 
-[`src/core/scheduler.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/scheduler.py)
+[`gateway/scheduler/service.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/scheduler/service.py)

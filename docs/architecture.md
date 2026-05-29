@@ -234,22 +234,22 @@ It is built around:
 
 ### Adding a New Platform
 
-1. Add a runtime for the platform under `src/adapters/runtime/` if the platform needs its own connection lifecycle.
-2. Add an input adapter under `src/adapters/input/` that converts platform events into `MessageEnvelope` objects and publishes them to the message bus.
-3. Add an output adapter under `src/adapters/output/` that accepts `OutboundMessage` objects and sends them back to that platform.
+1. Add a runtime for the platform under `gateway/platforms/<platform>/runtime.py` if the platform needs its own connection lifecycle.
+2. Add an input adapter under `gateway/platforms/<platform>/input.py` that converts platform events into `MessageEnvelope` objects and publishes them to the message bus.
+3. Add an output adapter under `gateway/platforms/<platform>/output.py` that accepts `OutboundMessage` objects and sends them back to that platform.
 4. Register the new input and output adapters in the builder paths in `main.py`.
 
 ### Adding a New Tool
 
-1. Create a new tool class under `src/tools/` by extending `langchain_core.tools.BaseTool`.
+1. Create a new tool class under `tools/` by extending `langchain_core.tools.BaseTool`.
 2. Implement the tool logic in `_arun`.
 3. Pass in any required dependencies through the tool constructor.
 4. Add the tool to the chat or life agent wiring in `main.py`, depending on which flow should use it.
 
 ### Swapping Backends
 
-1. Implement the relevant protocol from `src/shared_types/protocol.py`, such as `MessageBus`, `StateStore`, `EpisodicMemoryBackend`, or `SchedulerBackend`.
-2. Add the new implementation under the matching adapter module in `src/adapters/`.
+1. Implement the relevant protocol from `shared_types/protocol.py`, such as `MessageBus`, `StateStore`, `EpisodicMemoryBackend`, or `SchedulerBackend`.
+2. Add the new implementation under the matching backend module in `gateway/`.
 3. Replace the default backend wiring in `main.py`.
 
 ---
@@ -257,33 +257,24 @@ It is built around:
 ## File Structure
 
 ```
-src/
-├── adapters/          # Platform, transport, storage, and runtime integrations
-│   ├── audio/         # STT and TTS adapters
-│   ├── bus/           # Message bus backends
-│   ├── http/          # HTTP routes for dashboard, logs, metrics, ping
-│   ├── input/         # Inbound platform adapters
-│   ├── life/          # Life-state adapter layer
-│   ├── memory/        # Episodic memory backends
-│   ├── output/        # Outbound delivery adapters
-│   ├── runtime/       # Platform runtime implementations
-│   ├── scheduler/     # Scheduler backends
-│   └── state/         # State store backends
-├── agent/             # LangGraph-backed agent services
-│   ├── chat/          # Main conversational flow
-│   └── life/          # Internal reflection flow
-├── core/              # Runtime coordination and shared services
-│   ├── orchestrator.py              # Envelope router and flow coordinator
-│   ├── mood_engine.py               # Mood analysis and tracking
-│   ├── episodic_memory.py           # Memory recall and storage service
-│   ├── conversation_contraction.py  # History compaction
-│   ├── scheduler.py                 # Trigger scheduling and dispatch
-│   └── outputsink.py                # Output routing
-├── dashboard/         # Static dashboard assets
-├── logger/            # Structured logging
-├── shared_types/      # Shared models, protocols, and schemas
-├── templates/         # Prompt templates
-└── tools/             # Agent tools
+agent/             # LangGraph agents and runtime brain
+├── chat/          # ReAct chat agent graph and nodes
+├── life/          # Internal "life" reflection agent
+├── orchestration/ # Orchestrator, mood engine, output sink
+├── memory/        # Episodic memory store + conversation contraction
+└── prompts/       # Prompt templates
+gateway/           # Platform adapters and infrastructure backends
+├── platforms/     # discord, telegram, webhook, console (input/output/runtime)
+├── bus/           # Message bus (in-memory, redis)
+├── state/         # State store (in-memory, redis)
+├── memory/        # Episodic memory backends (in-memory, redis, pinecone)
+├── scheduler/     # Scheduler backends + service
+├── audio/         # Whisper STT + Edge TTS
+└── http/          # Dashboard, logs, metrics routes
+config/            # Settings, logging, exceptions
+shared_types/      # Models, protocols, trigger types, and envelope types
+tools/             # Built-in tools (auto-registered)
+web/               # Dashboard static assets
 ```
 
 ---

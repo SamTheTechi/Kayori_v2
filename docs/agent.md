@@ -211,7 +211,7 @@ LangGraph manages:
 ## File Structure
 
 ```
-src/agent/
+agent/
 ├── chat/
 │   ├── service.py      # ReactAgentService class
 │   └── graph.py        # LangGraph graph creation

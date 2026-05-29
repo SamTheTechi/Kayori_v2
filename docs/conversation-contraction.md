@@ -142,4 +142,4 @@ await conversation_contraction.compact(
 
 ## File Reference
 
-[`src/core/conversation_contraction.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/conversation_contraction.py)
+[`agent/memory/conversation_contraction.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/memory/conversation_contraction.py)

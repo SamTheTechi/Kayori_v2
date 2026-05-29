@@ -83,8 +83,8 @@ Current behavior:
 ## Creating a Custom Input Adapter
 
 ```python
-from src.shared_types.protocol import MessageBus
-from src.shared_types.models import MessageEnvelope, MessageSource
+from shared_types.protocol import MessageBus
+from shared_types.models import MessageEnvelope, MessageSource
 
 class MyPlatformInput:
     name = "my-platform"
@@ -123,10 +123,10 @@ WEBHOOK_SERVER_PORT=8080
 
 ## File References
 
-- [`src/adapters/input/discord_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/discord_input.py)
-- [`src/adapters/input/telegram_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/telegram_input.py)
-- [`src/adapters/input/webhook_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/webhook_input.py)
-- [`src/adapters/input/console_input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/input/console_input.py)
+- [`gateway/platforms/discord/input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/discord/input.py)
+- [`gateway/platforms/telegram/input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/telegram/input.py)
+- [`gateway/platforms/webhook/input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/webhook/input.py)
+- [`gateway/platforms/console/input.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/console/input.py)
 
 ## Related
 

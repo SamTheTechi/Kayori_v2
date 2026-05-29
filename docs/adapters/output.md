@@ -86,7 +86,7 @@ TTS is not implemented inside the output adapter. Audio generation happens earli
 ## Creating a Custom Output Adapter
 
 ```python
-from src.shared_types.models import MessageSource, OutboundMessage
+from shared_types.models import MessageSource, OutboundMessage
 
 class MyPlatformOutput:
     name = "my-platform"
@@ -119,11 +119,11 @@ OUTPUT_SINK_MODE=direct
 
 ## File References
 
-- [`src/adapters/output/discord_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/discord_output.py)
-- [`src/adapters/output/telegram_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/telegram_output.py)
-- [`src/adapters/output/webhook_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/webhook_output.py)
-- [`src/adapters/output/console_output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/output/console_output.py)
-- [`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/outputsink.py)
+- [`gateway/platforms/discord/output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/discord/output.py)
+- [`gateway/platforms/telegram/output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/telegram/output.py)
+- [`gateway/platforms/webhook/output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/webhook/output.py)
+- [`gateway/platforms/console/output.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/platforms/console/output.py)
+- [`agent/orchestration/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/orchestration/outputsink.py)
 
 ## Related
 

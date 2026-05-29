@@ -86,4 +86,4 @@ The compaction service is responsible for summarizing older history, extracting 
 
 ## File Reference
 
-[`src/core/orchestrator.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/orchestrator.py)
+[`agent/orchestration/orchestrator.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/orchestration/orchestrator.py)

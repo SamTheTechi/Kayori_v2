@@ -4,7 +4,7 @@ Adapters isolate platform and infrastructure concerns from the runtime logic.
 
 ## The Adapter Boundary
 
-The core runtime depends on protocol interfaces from `src/shared_types/protocol.py`, not on concrete platform or backend implementations.
+The core runtime depends on protocol interfaces from `shared_types/protocol.py`, not on concrete platform or backend implementations.
 
 Current adapter groups:
 - Input adapters publish `MessageEnvelope` objects to the message bus
@@ -93,16 +93,14 @@ From `main.py`:
 ## Adapter Directory Structure
 
 ```text
-src/adapters/
-├── audio/      # STT and TTS adapters
+gateway/
+├── platforms/  # Per-platform adapters (input.py / output.py / runtime.py)
 ├── bus/        # Message bus implementations
-├── http/       # Dashboard, logs, metrics, ping routes
-├── input/      # Inbound platform adapters
-├── memory/     # Episodic memory backends
-├── output/     # Outbound platform adapters
-├── runtime/    # Shared platform runtimes
-├── scheduler/  # Scheduler backends
 ├── state/      # State store backends
+├── memory/     # Episodic memory backends
+├── scheduler/  # Scheduler backends
+├── audio/      # STT and TTS adapters
+├── http/       # Dashboard, logs, metrics, ping routes
 └── webhook_common.py
 ```
 
@@ -116,7 +114,7 @@ To add a new platform:
 
 ## File References
 
-- [`src/shared_types/protocol.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/shared_types/protocol.py)
+- [`shared_types/protocol.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/shared_types/protocol.py)
 - [`main.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/main.py)
 
 ## Related

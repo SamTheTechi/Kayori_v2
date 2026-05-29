@@ -5,6 +5,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "apscheduler>=3.11.2",
     "discord.py>=2.3.2",
+    "ddgs>=9,<10",
     "dotenv>=0.9.9",
     "ffmpeg-python>=0.2.0",
     "fastapi>=0.116.1",
@@ -40,7 +41,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -121,4 +121,4 @@ for fact in extracted_facts:
 
 ## File Reference
 
-[`src/core/episodic_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/episodic_memory.py)
+[`agent/memory/episodic_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/memory/episodic_memory.py)

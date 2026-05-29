@@ -135,4 +135,4 @@ await self._output.send(reminder_message)
 
 ## File Reference
 
-[`src/core/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/core/outputsink.py)
+[`agent/orchestration/outputsink.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/agent/orchestration/outputsink.py)

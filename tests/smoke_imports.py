@@ -8,26 +8,37 @@ import traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = ROOT / "src"
+
+# Top-level packages that make up the application after the gateway/agent refactor.
+PACKAGES = (
+    "agent",
+    "config",
+    "gateway",
+    "shared_types",
+    "tools",
+    "web",
+)
 
 
 def module_name(path: Path) -> str:
-    relative = path.relative_to(SRC_DIR)
+    relative = path.relative_to(ROOT)
     if relative.name == "__init__.py":
-        parts = ("src",) + relative.parts[:-1]
-        return ".".join(parts)
-    parts = ("src",) + relative.with_suffix("").parts
-    return ".".join(parts)
+        return ".".join(relative.parts[:-1])
+    return ".".join(relative.with_suffix("").parts)
 
 
 def iter_modules() -> list[str]:
     modules: list[str] = []
-    for path in sorted(SRC_DIR.rglob("*.py")):
-        if path.name == "__main__.py":
+    for package in PACKAGES:
+        package_dir = ROOT / package
+        if not package_dir.is_dir():
             continue
-        name = module_name(path)
-        if name:
-            modules.append(name)
+        for path in sorted(package_dir.rglob("*.py")):
+            if path.name == "__main__.py":
+                continue
+            name = module_name(path)
+            if name:
+                modules.append(name)
     return modules
 
 

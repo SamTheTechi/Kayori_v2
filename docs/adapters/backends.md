@@ -156,15 +156,15 @@ Pinecone support additionally requires the corresponding API credentials if that
 
 ## File References
 
-- [`src/adapters/bus/redis_bus.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/bus/redis_bus.py)
-- [`src/adapters/bus/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/bus/in_memory.py)
-- [`src/adapters/state/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/state/redis.py)
-- [`src/adapters/state/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/state/in_memory.py)
-- [`src/adapters/memory/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/redis.py)
-- [`src/adapters/memory/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/in_memory.py)
-- [`src/adapters/memory/pinecone.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/memory/pinecone.py)
-- [`src/adapters/scheduler/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/scheduler/redis.py)
-- [`src/adapters/scheduler/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/src/adapters/scheduler/in_memory.py)
+- [`gateway/bus/redis_bus.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/bus/redis_bus.py)
+- [`gateway/bus/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/bus/in_memory.py)
+- [`gateway/state/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/state/redis.py)
+- [`gateway/state/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/state/in_memory.py)
+- [`gateway/memory/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/memory/redis.py)
+- [`gateway/memory/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/memory/in_memory.py)
+- [`gateway/memory/pinecone.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/memory/pinecone.py)
+- [`gateway/scheduler/redis.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/scheduler/redis.py)
+- [`gateway/scheduler/in_memory.py`](https://github.com/SamTheTechi/Kayori_v2/blob/master/gateway/scheduler/in_memory.py)
 
 ## Related
 
